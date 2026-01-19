@@ -2,6 +2,9 @@
  * Environment Variables Validation
  * Validates required environment variables on startup
  */
+
+import logger from "./logger.js";
+
 const validateEnv = () => {
   const requiredEnvVars = [
     "MONGODB_URI",
@@ -34,11 +37,11 @@ const validateEnv = () => {
   );
 
   if (missingEnvVars.length > 0) {
-    console.error("❌ Missing required environment variables:");
+    logger.error("❌ Missing required environment variables:");
     missingEnvVars.forEach((envVar) => {
-      console.error(`   - ${envVar}`);
+      logger.error(`   - ${envVar}`);
     });
-    console.error(
+    logger.error(
       "\nPlease check your .env file and ensure all required variables are set."
     );
     process.exit(1);
@@ -46,23 +49,23 @@ const validateEnv = () => {
 
   // Validate JWT secrets length (should be at least 32 characters)
   if (process.env.JWT_ACCESS_SECRET.length < 32) {
-    console.error("❌ JWT_ACCESS_SECRET must be at least 32 characters long");
+    logger.error("❌ JWT_ACCESS_SECRET must be at least 32 characters long");
     process.exit(1);
   }
 
   if (process.env.JWT_REFRESH_SECRET.length < 32) {
-    console.error("❌ JWT_REFRESH_SECRET must be at least 32 characters long");
+    logger.error("❌ JWT_REFRESH_SECRET must be at least 32 characters long");
     process.exit(1);
   }
 
   // Validate NODE_ENV
   const validNodeEnvs = ["development", "production", "test"];
   if (!validNodeEnvs.includes(process.env.NODE_ENV)) {
-    console.error(`❌ NODE_ENV must be one of: ${validNodeEnvs.join(", ")}`);
+    logger.error(`❌ NODE_ENV must be one of: ${validNodeEnvs.join(", ")}`);
     process.exit(1);
   }
 
-  console.log("✅ All required environment variables are set");
+  logger.info("✅ All required environment variables are set");
 };
 
 export default validateEnv;

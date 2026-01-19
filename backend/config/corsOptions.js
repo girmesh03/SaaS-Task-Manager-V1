@@ -1,5 +1,6 @@
 import allowedOrigins from "./allowedOrigins.js";
 import logger from "../utils/logger.js";
+import { HTTP_STATUS } from "../utils/constants.js";
 
 /**
  * CORS Configuration
@@ -20,7 +21,7 @@ const corsOptions = {
     }
   },
   credentials: true, // Enable credentials (cookies, authorization headers)
-  optionsSuccessStatus: 200,
+  optionsSuccessStatus: HTTP_STATUS.OK,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   exposedHeaders: ["Set-Cookie"],

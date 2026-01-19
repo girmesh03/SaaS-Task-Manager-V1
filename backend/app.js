@@ -1,3 +1,4 @@
+import dotenv from "dotenv";
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
@@ -5,11 +6,21 @@ import compression from "compression";
 import rateLimit from "express-rate-limit";
 import cookieParser from "cookie-parser";
 import mongoSanitize from "express-mongo-sanitize";
+import morgan from "morgan";
+
+// Load environment variables
+dotenv.config();
+
+import validateEnv from "./utils/validateEnv.js";
+
+// Validate environment variables
+validateEnv();
+
 import corsOptions from "./config/corsOptions.js";
 import errorHandler from "./errorHandler/ErrorController.js";
 import logger from "./utils/logger.js";
 import { generateRequestId } from "./utils/helpers.js";
-import { RATE_LIMIT } from "./utils/constants.js";
+import { RATE_LIMIT, HTTP_STATUS, ERROR_CODES } from "./utils/constants.js";
 
 // Set timezone to UTC
 process.env.TZ = "UTC";
@@ -59,6 +70,11 @@ app.use(cookieParser());
 // Sanitize data to prevent NoSQL injection
 app.use(mongoSanitize());
 
+// HTTP request logger (development only)
+if (process.env.NODE_ENV === "development") {
+  app.use(morgan("dev"));
+}
+
 // Compression middleware (1KB threshold)
 app.use(
   compression({
@@ -79,7 +95,7 @@ const limiter = rateLimit({
   message: {
     success: false,
     error: {
-      code: "TOO_MANY_REQUESTS",
+      code: ERROR_CODES.TOO_MANY_REQUESTS_ERROR,
       message: "Too many requests from this IP, please try again later",
       timestamp: new Date().toISOString(),
     },
@@ -92,10 +108,10 @@ const limiter = rateLimit({
       path: req.path,
       method: req.method,
     });
-    res.status(429).json({
+    res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
       success: false,
       error: {
-        code: "TOO_MANY_REQUESTS",
+        code: ERROR_CODES.TOO_MANY_REQUESTS_ERROR,
         message: "Too many requests from this IP, please try again later",
         timestamp: new Date().toISOString(),
       },
@@ -131,23 +147,25 @@ app.get("/health", async (req, res) => {
 
     const isHealthy = dbStatus === 1;
 
-    res.status(isHealthy ? 200 : 503).json({
-      success: isHealthy,
-      message: isHealthy ? "Server is healthy" : "Server is unhealthy",
-      data: {
-        server: "running",
-        database: dbStatusMap[dbStatus] || "unknown",
-        uptime: process.uptime(),
-        timestamp: new Date().toISOString(),
-      },
-    });
+    res
+      .status(isHealthy ? HTTP_STATUS.OK : HTTP_STATUS.SERVICE_UNAVAILABLE)
+      .json({
+        success: isHealthy,
+        message: isHealthy ? "Server is healthy" : "Server is unhealthy",
+        data: {
+          server: "running",
+          database: dbStatusMap[dbStatus] || "unknown",
+          uptime: process.uptime(),
+          timestamp: new Date().toISOString(),
+        },
+      });
   } catch (error) {
     logger.error("Health check error:", error);
-    res.status(503).json({
+    res.status(HTTP_STATUS.SERVICE_UNAVAILABLE).json({
       success: false,
       message: "Server is unhealthy",
       error: {
-        code: "HEALTH_CHECK_FAILED",
+        code: ERROR_CODES.INTERNAL_ERROR,
         message: error.message,
         timestamp: new Date().toISOString(),
       },
@@ -162,10 +180,10 @@ app.get("/health", async (req, res) => {
 
 // 404 handler for undefined routes
 app.use((req, res) => {
-  res.status(404).json({
+  res.status(HTTP_STATUS.NOT_FOUND).json({
     success: false,
     error: {
-      code: "NOT_FOUND",
+      code: ERROR_CODES.NOT_FOUND_ERROR,
       message: `Route ${req.method} ${req.path} not found`,
       timestamp: new Date().toISOString(),
     },

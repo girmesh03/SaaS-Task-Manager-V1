@@ -63,8 +63,7 @@ const connectDB = async () => {
       family: 4, // Use IPv4
     };
 
-    // Register connection event handlers before connecting
-    registerConnectionEventHandlers();
+    logger.info("MongoDB connecting...");
 
     const conn = await mongoose.connect(process.env.MONGODB_URI, options);
 
@@ -75,6 +74,9 @@ const connectDB = async () => {
       readyState: conn.connection.readyState,
       timezone: process.env.TZ,
     });
+
+    // Register connection event handlers AFTER successful connection
+    registerConnectionEventHandlers();
 
     return conn;
   } catch (error) {
@@ -91,19 +93,17 @@ const connectDB = async () => {
 
 /**
  * Register MongoDB connection event handlers
+ * Only registers handlers for future events (reconnection, errors, etc.)
  */
 const registerConnectionEventHandlers = () => {
   // Prevent duplicate event listeners
-  mongoose.connection.removeAllListeners();
+  mongoose.connection.removeAllListeners("error");
+  mongoose.connection.removeAllListeners("disconnecting");
+  mongoose.connection.removeAllListeners("disconnected");
+  mongoose.connection.removeAllListeners("reconnected");
+  mongoose.connection.removeAllListeners("close");
 
-  mongoose.connection.on("connecting", () => {
-    logger.info("MongoDB connecting...");
-  });
-
-  mongoose.connection.on("connected", () => {
-    logger.info("MongoDB connected");
-  });
-
+  // Only register handlers for events that might occur AFTER initial connection
   mongoose.connection.on("error", (err) => {
     logger.error("MongoDB connection error:", {
       error: err.message,

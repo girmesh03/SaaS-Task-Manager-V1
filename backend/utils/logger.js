@@ -4,9 +4,17 @@ import winston from "winston";
  * Winston Logger Configuration
  * Structured logging with different levels and formats
  */
-const { combine, timestamp, printf, colorize, errors } = winston.format;
+const { combine, timestamp, printf, colorize, errors, json } = winston.format;
 
-// Custom log format
+// Constants for file rotation
+const FILE_MAX_SIZE = 5 * 1024 * 1024; // 5MB
+const FILE_MAX_FILES = 5;
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+// Shared timestamp format
+const timestampFormat = timestamp({ format: "YYYY-MM-DD HH:mm:ss" });
+
+// Custom log format for development
 const logFormat = printf(
   ({ level, message, timestamp, stack, ...metadata }) => {
     let msg = `${timestamp} [${level}]: ${message}`;
@@ -30,30 +38,30 @@ const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || "info",
   format: combine(
     errors({ stack: true }),
-    timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-    logFormat
+    timestampFormat,
+    IS_PRODUCTION ? json() : logFormat
   ),
   transports: [
-    // Console transport
-    new winston.transports.Console({
-      format: combine(
-        colorize(),
-        timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-        logFormat
-      ),
-    }),
+    // Console transport (development only, with colors)
+    ...(!IS_PRODUCTION
+      ? [
+          new winston.transports.Console({
+            format: combine(colorize(), timestampFormat, logFormat),
+          }),
+        ]
+      : []),
     // File transport for errors
     new winston.transports.File({
       filename: "logs/error.log",
       level: "error",
-      maxsize: 5242880, // 5MB
-      maxFiles: 5,
+      maxsize: FILE_MAX_SIZE,
+      maxFiles: FILE_MAX_FILES,
     }),
     // File transport for all logs
     new winston.transports.File({
       filename: "logs/combined.log",
-      maxsize: 5242880, // 5MB
-      maxFiles: 5,
+      maxsize: FILE_MAX_SIZE,
+      maxFiles: FILE_MAX_FILES,
     }),
   ],
   // Handle uncaught exceptions and rejections
@@ -64,18 +72,5 @@ const logger = winston.createLogger({
     new winston.transports.File({ filename: "logs/rejections.log" }),
   ],
 });
-
-// If not in production, log to console with colors
-if (process.env.NODE_ENV !== "production") {
-  logger.add(
-    new winston.transports.Console({
-      format: combine(
-        colorize(),
-        timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-        logFormat
-      ),
-    })
-  );
-}
 
 export default logger;

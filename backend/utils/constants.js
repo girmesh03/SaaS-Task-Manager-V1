@@ -134,21 +134,26 @@ export const HTTP_STATUS = {
   UNPROCESSABLE_ENTITY: 422,
   TOO_MANY_REQUESTS: 429,
   INTERNAL_SERVER_ERROR: 500,
+  SERVICE_UNAVAILABLE: 503,
 };
 
 /**
  * Error Codes
  * @readonly
  * @enum {string}
+ *
+ * IMPORTANT:
+ * - UNAUTHENTICATED_ERROR (401): Authentication failure (missing/invalid/expired token)
+ * - FORBIDDEN_ERROR (403): Authorization failure (insufficient permissions)
  */
 export const ERROR_CODES = {
   VALIDATION_ERROR: "VALIDATION_ERROR",
-  UNAUTHORIZED: "UNAUTHORIZED",
-  FORBIDDEN: "FORBIDDEN",
-  NOT_FOUND: "NOT_FOUND",
-  CONFLICT: "CONFLICT",
+  UNAUTHENTICATED_ERROR: "UNAUTHENTICATED_ERROR", // 401 - Authentication failure
+  FORBIDDEN_ERROR: "FORBIDDEN_ERROR", // 403 - Authorization failure
+  NOT_FOUND_ERROR: "NOT_FOUND_ERROR",
+  CONFLICT_ERROR: "CONFLICT_ERROR",
   INTERNAL_ERROR: "INTERNAL_ERROR",
-  TOO_MANY_REQUESTS: "TOO_MANY_REQUESTS",
+  TOO_MANY_REQUESTS_ERROR: "TOO_MANY_REQUESTS_ERROR",
 };
 
 /**
@@ -254,7 +259,7 @@ export const ORGANIZATION_VALIDATION = {
   PHONE: {
     MIN_LENGTH: 10,
     MAX_LENGTH: 15,
-    PATTERN: /^\+?[1-9]\d{1,14}$/,
+    PATTERN: /^(\+251\d{9}|0\d{9})$/,
   },
   EMAIL: {
     MAX_LENGTH: 100,
@@ -300,7 +305,19 @@ export const USER_VALIDATION = {
   PASSWORD: {
     MIN_LENGTH: 8,
     MAX_LENGTH: 128,
-    PATTERN: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
+    // Production: Must contain lowercase, uppercase, digit, and special character
+    // Development: Any password with length between 8-128
+    PATTERN_PRODUCTION:
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,128}$/,
+    PATTERN_DEVELOPMENT: /^.{8,128}$/,
+  },
+  EMPLOYEE_ID: {
+    PATTERN: /^(?!0000)\d{4}$/, // 4 digits, cannot be 0000
+  },
+  PHONE: {
+    MIN_LENGTH: 10,
+    MAX_LENGTH: 15,
+    PATTERN: /^(\+251\d{9}|0\d{9})$/, // Ethiopian phone format: +251XXXXXXXXX or 0XXXXXXXXX
   },
   POSITION: {
     MAX_LENGTH: 100,
@@ -364,7 +381,7 @@ export const MATERIAL_VALIDATION = {
   },
   QUANTITY: {
     MIN: 0,
-    MAX: 1000000,
+    MAX: 20,
   },
   UNIT: {
     MIN_LENGTH: 1,
@@ -406,7 +423,7 @@ export const VENDOR_VALIDATION = {
   PHONE: {
     MIN_LENGTH: 10,
     MAX_LENGTH: 15,
-    PATTERN: /^\+?[1-9]\d{1,14}$/,
+    PATTERN: /^(\+251\d{9}|0\d{9})$/,
   },
   ADDRESS: {
     MAX_LENGTH: 500,

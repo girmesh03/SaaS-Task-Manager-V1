@@ -1,14 +1,8 @@
-import dotenv from "dotenv";
+// import dotenv from "dotenv";
 import app from "./app.js";
 import connectDB from "./config/db.js";
-import validateEnv from "./utils/validateEnv.js";
+
 import logger from "./utils/logger.js";
-
-// Load environment variables
-dotenv.config();
-
-// Validate environment variables
-validateEnv();
 
 // Connect to MongoDB
 await connectDB();

@@ -1,0 +1,86 @@
+{
+  "SuperAdmin": {
+    "own": ["read", "write", "delete"],
+    "ownDept": ["read", "write", "delete"],
+    "crossDept": ["read"],
+    "crossOrg": ["read", "write", "delete"],
+    "resources": {
+      "users": ["create", "read", "update", "delete", "restore"],
+      "departments": ["create", "read", "update", "delete", "restore"],
+      "organizations": ["create", "read", "update", "delete", "restore"],
+      "tasks": ["create", "read", "update", "delete", "restore"],
+      "materials": ["create", "read", "update", "delete", "restore"],
+      "vendors": ["create", "read", "update", "delete", "restore"],
+      "notifications": ["read", "update", "delete"],
+      "comments": ["create", "read", "update", "delete", "restore"],
+      "activities": ["create", "read", "update", "delete", "restore"],
+      "attachments": ["create", "read", "delete"]
+    }
+  },
+  "Admin": {
+    "own": ["read", "write", "delete"],
+    "ownDept": ["read", "write", "delete"],
+    "crossDept": ["read"],
+    "crossOrg": [],
+    "resources": {
+      "users": ["create", "read", "update", "delete"],
+      "departments": ["read"],
+      "organizations": ["read"],
+      "tasks": ["create", "read", "update", "delete"],
+      "materials": ["create", "read", "update", "delete"],
+      "vendors": ["create", "read", "update", "delete"],
+      "notifications": ["read", "update", "delete"],
+      "comments": ["create", "read", "update", "delete"],
+      "activities": ["create", "read", "update", "delete"],
+      "attachments": ["create", "read", "delete"]
+    }
+  },
+  "Manager": {
+    "own": ["read", "write", "delete"],
+    "ownDept": ["read", "write"],
+    "crossDept": ["read"],
+    "crossOrg": [],
+    "resources": {
+      "users": ["read", "update"],
+      "departments": ["read"],
+      "organizations": ["read"],
+      "tasks": ["create", "read", "update", "delete"],
+      "materials": ["create", "read", "update"],
+      "vendors": ["read", "update"],
+      "notifications": ["read", "update"],
+      "comments": ["create", "read", "update", "delete"],
+      "activities": ["create", "read", "update"],
+      "attachments": ["create", "read"]
+    }
+  },
+  "User": {
+    "own": ["read", "write"],
+    "ownDept": ["read"],
+    "crossDept": [],
+    "crossOrg": [],
+    "resources": {
+      "users": ["read"],
+      "departments": ["read"],
+      "organizations": ["read"],
+      "tasks": ["create", "read", "update"],
+      "materials": ["read"],
+      "vendors": ["read"],
+      "notifications": ["read", "update"],
+      "comments": ["create", "read", "update"],
+      "activities": ["create", "read"],
+      "attachments": ["create", "read"]
+    }
+  },
+  "ownershipFields": {
+    "tasks": ["createdBy", "assignees", "watchers"],
+    "comments": ["createdBy"],
+    "activities": ["createdBy"],
+    "notifications": ["recipients"],
+    "materials": ["createdBy", "uploadedBy"],
+    "vendors": ["createdBy"],
+    "attachments": ["uploadedBy"],
+    "users": ["_id"],
+    "departments": ["manager"],
+    "organizations": ["owner"]
+  }
+}
