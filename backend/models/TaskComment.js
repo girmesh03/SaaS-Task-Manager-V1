@@ -114,6 +114,17 @@ const taskCommentSchema = new mongoose.Schema(
       ],
       default: [],
     },
+
+    // Attachments (Requirement 12.12)
+    attachments: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Attachment",
+        },
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,
