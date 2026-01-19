@@ -78,6 +78,23 @@ export const VENDOR_STATUS = {
 };
 
 /**
+ * Material Category Enum
+ * @readonly
+ * @enum {string}
+ */
+export const MATERIAL_CATEGORY = {
+  ELECTRICAL: "Electrical",
+  MECHANICAL: "Mechanical",
+  PLUMBING: "Plumbing",
+  HARDWARE: "Hardware",
+  CLEANING: "Cleaning",
+  TEXTILES: "Textiles",
+  CONSUMABLES: "Consumables",
+  CONSTRUCTION: "Construction",
+  OTHER: "Other",
+};
+
+/**
  * Task Types Enum (Discriminator)
  * @readonly
  * @enum {string}
@@ -203,11 +220,118 @@ export const FILE_UPLOAD = {
   ],
 };
 
+// Industries
+export const INDUSTRIES = {
+  TECHNOLOGY: "Technology",
+  HEALTHCARE: "Healthcare",
+  FINANCE: "Finance",
+  EDUCATION: "Education",
+  RETAIL: "Retail",
+  MANUFACTURING: "Manufacturing",
+  CONSTRUCTION: "Construction",
+  HOSPITALITY: "Hospitality",
+  TRANSPORTATION: "Transportation",
+  REAL_ESTATE: "Real Estate",
+  AGRICULTURE: "Agriculture",
+  ENERGY: "Energy",
+  TELECOMMUNICATIONS: "Telecommunications",
+  MEDIA: "Media",
+  ENTERTAINMENT: "Entertainment",
+  LEGAL: "Legal",
+  CONSULTING: "Consulting",
+  INSURANCE: "Insurance",
+  AUTOMOTIVE: "Automotive",
+  AEROSPACE: "Aerospace",
+  PHARMACEUTICAL: "Pharmaceutical",
+  FOOD_BEVERAGE: "Food & Beverage",
+  GOVERNMENT: "Government",
+  NON_PROFIT: "Non-Profit",
+};
+
+export const INDUSTRIES_SIZE = {
+  SMALL: "Small",
+  MEDIUM: "Medium",
+  LARGE: "Large",
+  ENTERPRISE: "Enterprise",
+};
+
 /**
  * Comment Depth Limit
  * @readonly
  */
 export const COMMENT_MAX_DEPTH = 3;
+
+/**
+ * File Types
+ * @readonly
+ * @enum {string}
+ */
+export const FILE_TYPES = {
+  IMAGE: "Image",
+  VIDEO: "Video",
+  DOCUMENT: "Document",
+  AUDIO: "Audio",
+  OTHER: "Other",
+};
+
+/**
+ * Parent Model Types (for polymorphic references)
+ * @readonly
+ * @enum {string}
+ */
+export const PARENT_MODEL_TYPES = {
+  TASK: "Task",
+  TASK_ACTIVITY: "TaskActivity",
+  TASK_COMMENT: "TaskComment",
+};
+
+/**
+ * Entity Model Types (for notifications)
+ * @readonly
+ * @enum {string}
+ */
+export const ENTITY_MODEL_TYPES = {
+  TASK: "Task",
+  TASK_ACTIVITY: "TaskActivity",
+  TASK_COMMENT: "TaskComment",
+  USER: "User",
+  ORGANIZATION: "Organization",
+  DEPARTMENT: "Department",
+  MATERIAL: "Material",
+  VENDOR: "Vendor",
+};
+
+/**
+ * Skill Validation
+ * @readonly
+ */
+export const SKILL_VALIDATION = {
+  NAME: {
+    MAX_LENGTH: 50,
+  },
+  PERCENTAGE: {
+    MIN: 0,
+    MAX: 100,
+  },
+  MAX_COUNT: 10,
+};
+
+/**
+ * Tag Validation
+ * @readonly
+ */
+export const TAG_VALIDATION = {
+  MAX_LENGTH: 50,
+  MAX_COUNT: 5,
+};
+
+/**
+ * Notification Title Validation
+ * @readonly
+ */
+export const NOTIFICATION_TITLE_VALIDATION = {
+  MAX_LENGTH: 200,
+};
 
 /**
  * Password Requirements
@@ -563,7 +687,7 @@ export const MILESTONE_VALIDATION = {
     MAX_LENGTH: 100,
   },
   STATUS: {
-    VALUES: ["TODO", "IN_PROGRESS", "COMPLETED", "CANCELLED"],
+    VALUES: ["TODO", "IN_PROGRESS", "COMPLETED", "PENDING", "CANCELLED"],
   },
 };
 
@@ -610,6 +734,7 @@ export default {
   ACTIVITY_TYPES,
   NOTIFICATION_TYPES,
   VENDOR_STATUS,
+  MATERIAL_CATEGORY,
   TASK_TYPES,
   RECURRENCE_FREQUENCY,
   TTL_EXPIRY,
@@ -620,6 +745,12 @@ export default {
   TOKEN_EXPIRY,
   FILE_UPLOAD,
   COMMENT_MAX_DEPTH,
+  FILE_TYPES,
+  PARENT_MODEL_TYPES,
+  ENTITY_MODEL_TYPES,
+  SKILL_VALIDATION,
+  TAG_VALIDATION,
+  NOTIFICATION_TITLE_VALIDATION,
   PASSWORD,
   ACCOUNT_LOCKOUT,
   SOCKET_EVENTS,
@@ -643,4 +774,6 @@ export default {
   IMAGE_VALIDATION,
   EDIT_HISTORY_VALIDATION,
   SEARCH_VALIDATION,
+  INDUSTRIES,
+  INDUSTRIES_SIZE,
 };
