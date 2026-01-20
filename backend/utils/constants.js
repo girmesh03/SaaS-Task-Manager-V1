@@ -193,12 +193,21 @@ export const RATE_LIMIT = {
 };
 
 /**
- * JWT Token Expiry
+ * JWT Token Expiry (string format for JWT signing)
  * @readonly
  */
 export const TOKEN_EXPIRY = {
   ACCESS: "15m",
   REFRESH: "7d",
+};
+
+/**
+ * JWT Token Expiry in Milliseconds (for Date calculations)
+ * @readonly
+ */
+export const TOKEN_EXPIRY_MS = {
+  ACCESS: 15 * 60 * 1000, // 15 minutes
+  REFRESH: 7 * 24 * 60 * 60 * 1000, // 7 days
 };
 
 /**
@@ -743,6 +752,7 @@ export default {
   PAGINATION,
   RATE_LIMIT,
   TOKEN_EXPIRY,
+  TOKEN_EXPIRY_MS,
   FILE_UPLOAD,
   COMMENT_MAX_DEPTH,
   FILE_TYPES,

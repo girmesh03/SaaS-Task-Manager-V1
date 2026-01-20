@@ -26,6 +26,16 @@ const throwDeleteError = (methodName, suggestedMethod) => {
 };
 
 /**
+ * Helper to build query with optional session support
+ * @param {Query} query - Mongoose query
+ * @param {ClientSession|null} session - Optional MongoDB session
+ * @returns {Query} Query with session if provided
+ */
+const withSession = (query, session) => {
+  return session ? query.session(session) : query;
+};
+
+/**
  * Soft Delete Plugin
  * @param {mongoose.Schema} schema - Mongoose schema to apply plugin to
  * @param {Object} options - Plugin options
@@ -65,9 +75,14 @@ const softDeletePlugin = (schema, options = {}) => {
 
   // Override native Mongoose delete methods to throw errors (Requirement 2.3)
   if (overrideNativeMethods) {
-    schema.methods.remove = function () {
-      throwDeleteError("remove", "softDelete()");
-    };
+    // Use schema.method() with suppressWarning option for 'remove' to avoid Mongoose internal warning
+    schema.method(
+      "remove",
+      function () {
+        throwDeleteError("remove", "softDelete()");
+      },
+      { suppressWarning: true }
+    );
 
     schema.methods.deleteOne = function () {
       throwDeleteError("deleteOne", "softDelete()");
@@ -160,17 +175,21 @@ const softDeletePlugin = (schema, options = {}) => {
     }
   };
 
-  // Static method: softDeleteById() (Requirement 2.6)
+  /**
+   * Soft delete a document by ID
+   * @param {string|ObjectId} id - Document ID
+   * @param {string|ObjectId|null} deletedBy - User ID who deleted the document
+   * @param {ClientSession|null} session - MongoDB session for transactions
+   * @returns {Promise<Document>} The soft-deleted document
+   * @throws {Error} If document not found
+   */
   schema.statics.softDeleteById = async function (
     id,
     deletedBy = null,
     session = null
   ) {
     try {
-      let query = this.findById(id);
-      if (session) query = query.session(session);
-
-      const document = await query;
+      const document = await withSession(this.findById(id), session);
 
       if (!document) {
         throw new Error(`Document with id ${id} not found`);
@@ -187,27 +206,19 @@ const softDeletePlugin = (schema, options = {}) => {
     }
   };
 
-  // Static method: softDeleteMany() (Requirement 2.10)
+  /**
+   * Soft delete multiple documents matching filter
+   * @param {Object} filter - MongoDB filter query
+   * @param {string|ObjectId|null} deletedBy - User ID who deleted the documents
+   * @param {ClientSession|null} session - MongoDB session for transactions
+   * @returns {Promise<{matchedCount: number, modifiedCount: number}>} Update result
+   */
   schema.statics.softDeleteMany = async function (
     filter,
     deletedBy = null,
     session = null
   ) {
     try {
-      // Check if documents exist
-      let countQuery = this.countDocuments(filter);
-      if (session) countQuery = countQuery.session(session);
-
-      const count = await countQuery;
-
-      if (count === 0) {
-        logger.warn("No documents found for soft delete", {
-          model: this.modelName,
-          filter,
-        });
-        return { matchedCount: 0, modifiedCount: 0 };
-      }
-
       const updateData = {
         isDeleted: true,
         deletedAt: new Date(),
@@ -216,19 +227,27 @@ const softDeletePlugin = (schema, options = {}) => {
         updateData.deletedBy = deletedBy;
       }
 
-      let updateQuery = this.updateMany(filter, updateData);
-      if (session) updateQuery = updateQuery.session(session);
+      const result = await withSession(
+        this.updateMany(filter, updateData),
+        session
+      );
 
-      const result = await updateQuery;
-
-      logger.info("Documents soft deleted", {
-        model: this.modelName,
-        filter,
-        matchedCount: result.matchedCount,
-        modifiedCount: result.modifiedCount,
-        deletedBy,
-        inTransaction: !!session,
-      });
+      // Log based on result instead of pre-checking
+      if (result.matchedCount === 0) {
+        logger.warn("No documents found for soft delete", {
+          model: this.modelName,
+          filter,
+        });
+      } else {
+        logger.info("Documents soft deleted", {
+          model: this.modelName,
+          filter,
+          matchedCount: result.matchedCount,
+          modifiedCount: result.modifiedCount,
+          deletedBy,
+          inTransaction: !!session,
+        });
+      }
 
       return result;
     } catch (error) {
@@ -241,13 +260,19 @@ const softDeletePlugin = (schema, options = {}) => {
     }
   };
 
-  // Static method: restoreById() (Requirement 2.7)
+  /**
+   * Restore a soft-deleted document by ID
+   * @param {string|ObjectId} id - Document ID
+   * @param {ClientSession|null} session - MongoDB session for transactions
+   * @returns {Promise<Document>} The restored document
+   * @throws {Error} If document not found
+   */
   schema.statics.restoreById = async function (id, session = null) {
     try {
-      let query = this.findById(id).withDeleted();
-      if (session) query = query.session(session);
-
-      const document = await query;
+      const document = await withSession(
+        this.findById(id).withDeleted(),
+        session
+      );
 
       if (!document) {
         throw new Error(`Document with id ${id} not found`);
@@ -264,39 +289,38 @@ const softDeletePlugin = (schema, options = {}) => {
     }
   };
 
-  // Static method: restoreMany() (Requirement 2.11)
+  /**
+   * Restore multiple soft-deleted documents matching filter
+   * @param {Object} filter - MongoDB filter query
+   * @param {ClientSession|null} session - MongoDB session for transactions
+   * @returns {Promise<{matchedCount: number, modifiedCount: number}>} Update result
+   */
   schema.statics.restoreMany = async function (filter, session = null) {
     try {
-      // Check if documents exist
-      let countQuery = this.countDocuments(filter).withDeleted();
-      if (session) countQuery = countQuery.session(session);
+      const result = await withSession(
+        this.updateMany(filter, {
+          isDeleted: false,
+          deletedAt: null,
+          deletedBy: null,
+        }).setOptions({ withDeleted: true }),
+        session
+      );
 
-      const count = await countQuery;
-
-      if (count === 0) {
+      // Log based on result instead of pre-checking
+      if (result.matchedCount === 0) {
         logger.warn("No documents found for restore", {
           model: this.modelName,
           filter,
         });
-        return { matchedCount: 0, modifiedCount: 0 };
+      } else {
+        logger.info("Documents restored", {
+          model: this.modelName,
+          filter,
+          matchedCount: result.matchedCount,
+          modifiedCount: result.modifiedCount,
+          inTransaction: !!session,
+        });
       }
-
-      let updateQuery = this.updateMany(filter, {
-        isDeleted: false,
-        deletedAt: null,
-        deletedBy: null,
-      });
-      if (session) updateQuery = updateQuery.session(session);
-
-      const result = await updateQuery;
-
-      logger.info("Documents restored", {
-        model: this.modelName,
-        filter,
-        matchedCount: result.matchedCount,
-        modifiedCount: result.modifiedCount,
-        inTransaction: !!session,
-      });
 
       return result;
     } catch (error) {
@@ -322,7 +346,8 @@ const softDeletePlugin = (schema, options = {}) => {
   };
 
   // Automatically filter soft-deleted documents in queries (Requirement 2.4)
-  // This middleware runs before find, findOne, findOneAndUpdate, count, countDocuments
+  // This middleware runs before find, findOne, findOneAndUpdate, updateOne, updateMany, replaceOne, count, countDocuments
+  // Note: findById uses findOne internally, so it's covered by the findOne hook
   const excludeDeletedMiddleware = function (next) {
     // Only apply filter if withDeleted() or onlyDeleted() was not called
     if (!this.getOptions().withDeleted && !this.getOptions().onlyDeleted) {
@@ -331,11 +356,21 @@ const softDeletePlugin = (schema, options = {}) => {
     next();
   };
 
-  schema.pre("find", excludeDeletedMiddleware);
-  schema.pre("findOne", excludeDeletedMiddleware);
-  schema.pre("findOneAndUpdate", excludeDeletedMiddleware);
-  schema.pre("count", excludeDeletedMiddleware);
-  schema.pre("countDocuments", excludeDeletedMiddleware);
+  // Query hooks to apply soft delete filtering
+  const QUERY_HOOKS = [
+    "find",
+    "findOne",
+    "findOneAndUpdate",
+    "updateOne",
+    "updateMany",
+    "replaceOne",
+    "count",
+    "countDocuments",
+  ];
+
+  QUERY_HOOKS.forEach((hook) => {
+    schema.pre(hook, excludeDeletedMiddleware);
+  });
 
   // Handle aggregate pipeline to filter isDeleted documents (Requirement 2.12)
   schema.pre("aggregate", function (next) {

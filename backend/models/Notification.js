@@ -125,8 +125,23 @@ const notificationSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    versionKey: false,
+    toJSON: {
+      virtuals: true,
+      transform: (doc, ret) => {
+        delete ret.id;
+        delete ret.__v;
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: (doc, ret) => {
+        delete ret.id;
+        delete ret.__v;
+        return ret;
+      },
+    },
   }
 );
 
@@ -226,6 +241,333 @@ notificationSchema.statics.batchMarkAsRead = async function (
     { isRead: true },
     { session }
   );
+};
+
+/**
+ * Validate deletion pre-conditions for Notification
+ * @param {mongoose.Document} document - Notification document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+notificationSchema.statics.validateDeletion = async function (
+  document,
+  session = null
+) {
+  const errors = [];
+  const warnings = [];
+
+  try {
+    // Warning: TTL check
+    const daysSinceCreation = Math.floor(
+      (new Date() - document.createdAt) / (1000 * 60 * 60 * 24)
+    );
+    if (daysSinceCreation > 20) {
+      warnings.push({
+        code: "APPROACHING_TTL",
+        message: `Notification is ${daysSinceCreation} days old (TTL: 30 days)`,
+        daysSinceCreation,
+      });
+    }
+
+    // Warning: Expiry check
+    if (document.expiresAt && document.expiresAt < new Date()) {
+      warnings.push({
+        code: "NOTIFICATION_EXPIRED",
+        message: "Notification has already expired",
+        expiresAt: document.expiresAt,
+      });
+    }
+
+    // Note: Notifications are auto-cleaned by TTL after user read and when TTL expires
+    warnings.push({
+      code: "AUTO_CLEANUP",
+      message:
+        "Notifications are auto-cleaned by TTL after 30 days. Manual deletion is optional.",
+    });
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Validate restoration pre-conditions for Notification
+ * @param {mongoose.Document} document - Notification document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+notificationSchema.statics.validateRestoration = async function (
+  document,
+  session = null
+) {
+  const errors = [];
+  const warnings = [];
+
+  try {
+    const Organization = mongoose.model("Organization");
+    const Department = mongoose.model("Department");
+    const User = mongoose.model("User");
+
+    // Pre-condition 1: Organization must exist and NOT be deleted
+    const organization = await Organization.findById(document.organization)
+      .session(session)
+      .withDeleted();
+
+    if (!organization) {
+      errors.push({
+        code: "ORGANIZATION_NOT_FOUND",
+        message: "Organization not found",
+        field: "organization",
+      });
+    } else if (organization.isDeleted) {
+      errors.push({
+        code: "ORGANIZATION_DELETED",
+        message: "Cannot restore notification because organization is deleted",
+        field: "organization",
+      });
+    }
+
+    // Pre-condition 2: Department must exist and NOT be deleted
+    const department = await Department.findById(document.department)
+      .session(session)
+      .withDeleted();
+
+    if (!department) {
+      errors.push({
+        code: "DEPARTMENT_NOT_FOUND",
+        message: "Department not found",
+        field: "department",
+      });
+    } else if (department.isDeleted) {
+      errors.push({
+        code: "DEPARTMENT_DELETED",
+        message: "Cannot restore notification because department is deleted",
+        field: "department",
+      });
+    }
+
+    // Pre-condition 3: All recipients must exist and NOT be deleted
+    if (document.recipients && document.recipients.length > 0) {
+      const recipients = await User.find({
+        _id: { $in: document.recipients },
+      })
+        .session(session)
+        .withDeleted();
+
+      const deletedRecipients = recipients.filter((r) => r.isDeleted);
+      if (deletedRecipients.length > 0) {
+        errors.push({
+          code: "RECIPIENTS_DELETED",
+          message: `${deletedRecipients.length} recipients are deleted and cannot receive notification`,
+          deletedRecipientIds: deletedRecipients.map((r) => r._id),
+        });
+      }
+
+      const invalidRecipients = recipients.filter(
+        (r) =>
+          r.organization.toString() !== document.organization.toString() ||
+          r.department.toString() !== document.department.toString()
+      );
+
+      if (invalidRecipients.length > 0) {
+        errors.push({
+          code: "RECIPIENTS_WRONG_ORG_DEPT",
+          message:
+            "All recipients must belong to the same organization and department",
+          field: "recipients",
+        });
+      }
+    }
+
+    // Pre-condition 4: Entity reference validation (if exists)
+    if (document.entity && document.entityModel) {
+      const EntityModel = mongoose.model(document.entityModel);
+      const entity = await EntityModel.findById(document.entity)
+        .session(session)
+        .withDeleted();
+
+      if (!entity) {
+        warnings.push({
+          code: "ENTITY_NOT_FOUND",
+          message: `Referenced ${document.entityModel} not found`,
+          field: "entity",
+        });
+      } else if (entity.isDeleted) {
+        warnings.push({
+          code: "ENTITY_DELETED",
+          message: `Referenced ${document.entityModel} is deleted`,
+          field: "entity",
+          entityId: entity._id,
+        });
+      }
+    }
+
+    // Pre-condition 5: Expiry date validation
+    if (document.expiresAt && document.expiresAt < new Date()) {
+      errors.push({
+        code: "NOTIFICATION_EXPIRED",
+        message: "Cannot restore notification because it has expired",
+        field: "expiresAt",
+        expiresAt: document.expiresAt,
+      });
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Cascade delete Notification
+ * No children to cascade (leaf node, auto-cleaned by TTL)
+ * @param {mongoose.Types.ObjectId} documentId - Notification ID
+ * @param {mongoose.Types.ObjectId} deletedBy - User performing deletion
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, deletedCount: number, warnings: Array, errors: Array}>}
+ */
+notificationSchema.statics.cascadeDelete = async function (
+  documentId,
+  deletedBy,
+  session,
+  options = {}
+) {
+  const { skipValidation = false, force = false } = options;
+
+  const result = {
+    success: false,
+    deletedCount: 0,
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    const notification = await this.findById(documentId)
+      .session(session)
+      .withDeleted();
+
+    if (!notification) {
+      result.errors.push({
+        code: "NOTIFICATION_NOT_FOUND",
+        message: "Notification not found",
+      });
+      return result;
+    }
+
+    if (!skipValidation) {
+      const validation = await this.validateDeletion(notification, session);
+      result.warnings.push(...validation.warnings);
+
+      if (!validation.valid && !force) {
+        result.errors.push(...validation.errors);
+        return result;
+      }
+    }
+
+    await notification.softDelete(deletedBy, session);
+    result.deletedCount++;
+
+    // No children to cascade delete (leaf node)
+    // Notifications are auto-cleaned by TTL after 30 days
+
+    result.success = true;
+    return result;
+  } catch (error) {
+    result.errors.push({
+      code: "CASCADE_DELETE_ERROR",
+      message: error.message,
+      stack: error.stack,
+    });
+    return result;
+  }
+};
+
+/**
+ * Cascade restore Notification
+ * No children to cascade (leaf node)
+ * @param {mongoose.Types.ObjectId} documentId - Notification ID
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, restoredCount: number, warnings: Array, errors: Array}>}
+ */
+notificationSchema.statics.cascadeRestore = async function (
+  documentId,
+  session,
+  options = {}
+) {
+  const { skipValidation = false } = options;
+
+  const result = {
+    success: false,
+    restoredCount: 0,
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    const notification = await this.findById(documentId)
+      .session(session)
+      .withDeleted();
+
+    if (!notification) {
+      result.errors.push({
+        code: "NOTIFICATION_NOT_FOUND",
+        message: "Notification not found",
+      });
+      return result;
+    }
+
+    if (!skipValidation) {
+      const validation = await this.validateRestoration(notification, session);
+      result.warnings.push(...validation.warnings);
+
+      if (!validation.valid) {
+        result.errors.push(...validation.errors);
+        return result;
+      }
+    }
+
+    await notification.restore(session);
+    result.restoredCount++;
+
+    // No children to cascade restore (leaf node)
+
+    result.success = true;
+    return result;
+  } catch (error) {
+    result.errors.push({
+      code: "CASCADE_RESTORE_ERROR",
+      message: error.message,
+      stack: error.stack,
+    });
+    return result;
+  }
 };
 
 const Notification = mongoose.model("Notification", notificationSchema);

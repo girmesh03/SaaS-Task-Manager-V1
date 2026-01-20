@@ -201,8 +201,23 @@ const organizationSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    versionKey: false,
+    toJSON: {
+      virtuals: true,
+      transform: (doc, ret) => {
+        delete ret.id;
+        delete ret.__v;
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: (doc, ret) => {
+        delete ret.id;
+        delete ret.__v;
+        return ret;
+      },
+    },
   }
 );
 
@@ -299,6 +314,543 @@ organizationSchema.statics.preventPlatformOrgDeletion = async function (
   }
 
   return organization;
+};
+
+/**
+ * Validate deletion pre-conditions for Organization
+ * @param {mongoose.Document} document - Organization document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+organizationSchema.statics.validateDeletion = async function (
+  document,
+  session = null
+) {
+  const errors = [];
+  const warnings = [];
+
+  try {
+    // Pre-condition 1: Cannot delete platform organization
+    if (document.isPlatformOrg === true) {
+      errors.push({
+        code: "PLATFORM_ORG_DELETE_FORBIDDEN",
+        message: "Platform organization cannot be deleted",
+        field: "isPlatformOrg",
+      });
+    }
+
+    // Pre-condition 2: Check for massive cascade operation
+    const Department = mongoose.model("Department");
+    const User = mongoose.model("User");
+    const Task = mongoose.model("Task");
+
+    const departmentCount = await Department.countDocuments({
+      organization: document._id,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    const userCount = await User.countDocuments({
+      organization: document._id,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    const taskCount = await Task.countDocuments({
+      organization: document._id,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    if (departmentCount > 100 || userCount > 1000 || taskCount > 10000) {
+      warnings.push({
+        code: "MASSIVE_CASCADE_OPERATION",
+        message: `This will cascade delete ${departmentCount} departments, ${userCount} users, and ${taskCount} tasks. This is a massive operation.`,
+        counts: { departmentCount, userCount, taskCount },
+      });
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Validate restoration pre-conditions for Organization
+ * @param {mongoose.Document} document - Organization document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+organizationSchema.statics.validateRestoration = async function (
+  document,
+  session = null
+) {
+  const errors = [];
+  const warnings = [];
+
+  try {
+    // Pre-condition 1: Platform organizations cannot be deleted, so restoration is irrelevant
+    if (document.isPlatformOrg === true) {
+      errors.push({
+        code: "PLATFORM_ORG_RESTORE_INVALID",
+        message:
+          "Platform organizations cannot be deleted, so restoration is not applicable",
+        field: "isPlatformOrg",
+      });
+    }
+
+    // Pre-condition 2: Check for duplicate name conflicts
+    const nameConflict = await this.findOne({
+      name: document.name,
+      _id: { $ne: document._id },
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    if (nameConflict) {
+      errors.push({
+        code: "DUPLICATE_NAME",
+        message: `Another organization with name '${document.name}' already exists`,
+        field: "name",
+        conflictId: nameConflict._id,
+      });
+    }
+
+    // Pre-condition 3: Check for duplicate email conflicts
+    const emailConflict = await this.findOne({
+      email: document.email,
+      _id: { $ne: document._id },
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    if (emailConflict) {
+      errors.push({
+        code: "DUPLICATE_EMAIL",
+        message: `Another organization with email '${document.email}' already exists`,
+        field: "email",
+        conflictId: emailConflict._id,
+      });
+    }
+
+    // Pre-condition 4: Check for duplicate phone conflicts
+    const phoneConflict = await this.findOne({
+      phone: document.phone,
+      _id: { $ne: document._id },
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    if (phoneConflict) {
+      errors.push({
+        code: "DUPLICATE_PHONE",
+        message: `Another organization with phone '${document.phone}' already exists`,
+        field: "phone",
+        conflictId: phoneConflict._id,
+      });
+    }
+
+    // Pre-condition 5: Validate subscription state
+    if (
+      document.subscription.status === "Active" &&
+      document.subscription.expiresAt &&
+      new Date(document.subscription.expiresAt) < new Date()
+    ) {
+      warnings.push({
+        code: "SUBSCRIPTION_EXPIRED",
+        message: "Subscription has expired during deletion period",
+        field: "subscription.expiresAt",
+        expiresAt: document.subscription.expiresAt,
+      });
+    }
+
+    // Warning: Massive cascade restoration
+    const Department = mongoose.model("Department");
+    const User = mongoose.model("User");
+
+    const deletedDepartmentCount = await Department.countDocuments({
+      organization: document._id,
+      isDeleted: true,
+    }).session(session);
+
+    const deletedUserCount = await User.countDocuments({
+      organization: document._id,
+      isDeleted: true,
+    }).session(session);
+
+    if (deletedDepartmentCount > 50 || deletedUserCount > 500) {
+      warnings.push({
+        code: "MASSIVE_CASCADE_RESTORATION",
+        message: `This will cascade restore ${deletedDepartmentCount} departments and ${deletedUserCount} users. This is a massive operation.`,
+        counts: { deletedDepartmentCount, deletedUserCount },
+      });
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Cascade delete organization with all pre-condition validations
+ * @param {mongoose.Types.ObjectId} documentId - Organization ID
+ * @param {mongoose.Types.ObjectId} deletedBy - User performing deletion
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, deletedCount: number, warnings: Array, errors: Array}>}
+ */
+organizationSchema.statics.cascadeDelete = async function (
+  documentId,
+  deletedBy,
+  session,
+  options = {}
+) {
+  const {
+    skipValidation = false,
+    force = false,
+    depth = 0,
+    maxDepth = 10,
+  } = options;
+
+  const result = {
+    success: false,
+    deletedCount: 0,
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    // Check recursion depth
+    if (depth >= maxDepth) {
+      result.errors.push({
+        code: "MAX_DEPTH_EXCEEDED",
+        message: `Maximum cascade depth of ${maxDepth} exceeded`,
+      });
+      return result;
+    }
+
+    // Find organization
+    const organization = await this.findById(documentId)
+      .session(session)
+      .withDeleted();
+
+    if (!organization) {
+      result.errors.push({
+        code: "ORGANIZATION_NOT_FOUND",
+        message: "Organization not found",
+      });
+      return result;
+    }
+
+    // Run pre-condition validations
+    if (!skipValidation) {
+      const validation = await this.validateDeletion(organization, session);
+      result.warnings.push(...validation.warnings);
+
+      if (!validation.valid) {
+        result.errors.push(...validation.errors);
+        if (!force) {
+          return result;
+        }
+      }
+    }
+
+    // Soft delete organization
+    await organization.softDelete(deletedBy, session);
+    result.deletedCount++;
+
+    // Cascade delete child resources
+    const Department = mongoose.model("Department");
+    const User = mongoose.model("User");
+    const Task = mongoose.model("Task");
+    const Material = mongoose.model("Material");
+    const Vendor = mongoose.model("Vendor");
+    const Notification = mongoose.model("Notification");
+
+    // Delete departments
+    const departments = await Department.find({
+      organization: documentId,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const dept of departments) {
+      const deptResult = await Department.cascadeDelete(
+        dept._id,
+        deletedBy,
+        session,
+        { ...options, depth: depth + 1 }
+      );
+      result.deletedCount += deptResult.deletedCount;
+      result.warnings.push(...deptResult.warnings);
+      result.errors.push(...deptResult.errors);
+    }
+
+    // Delete users
+    const users = await User.find({
+      organization: documentId,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const user of users) {
+      const userResult = await User.cascadeDelete(
+        user._id,
+        deletedBy,
+        session,
+        { ...options, depth: depth + 1 }
+      );
+      result.deletedCount += userResult.deletedCount;
+      result.warnings.push(...userResult.warnings);
+      result.errors.push(...userResult.errors);
+    }
+
+    // Delete tasks
+    const tasks = await Task.find({
+      organization: documentId,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const task of tasks) {
+      const taskResult = await Task.cascadeDelete(
+        task._id,
+        deletedBy,
+        session,
+        { ...options, depth: depth + 1 }
+      );
+      result.deletedCount += taskResult.deletedCount;
+      result.warnings.push(...taskResult.warnings);
+      result.errors.push(...taskResult.errors);
+    }
+
+    // Delete materials
+    const materials = await Material.find({
+      organization: documentId,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const material of materials) {
+      await material.softDelete(deletedBy, session);
+      result.deletedCount++;
+    }
+
+    // Delete vendors
+    const vendors = await Vendor.find({
+      organization: documentId,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const vendor of vendors) {
+      await vendor.softDelete(deletedBy, session);
+      result.deletedCount++;
+    }
+
+    // Delete notifications
+    const notifications = await Notification.find({
+      organization: documentId,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const notification of notifications) {
+      await notification.softDelete(deletedBy, session);
+      result.deletedCount++;
+    }
+
+    result.success = true;
+    return result;
+  } catch (error) {
+    result.errors.push({
+      code: "CASCADE_DELETE_ERROR",
+      message: error.message,
+      stack: error.stack,
+    });
+    return result;
+  }
+};
+
+/**
+ * Cascade restore organization with all pre-condition validations
+ * @param {mongoose.Types.ObjectId} documentId - Organization ID
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, restoredCount: number, warnings: Array, errors: Array}>}
+ */
+organizationSchema.statics.cascadeRestore = async function (
+  documentId,
+  session,
+  options = {}
+) {
+  const {
+    skipValidation = false,
+    validateParents = true,
+    depth = 0,
+    maxDepth = 10,
+  } = options;
+
+  const result = {
+    success: false,
+    restoredCount: 0,
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    // Check recursion depth
+    if (depth >= maxDepth) {
+      result.errors.push({
+        code: "MAX_DEPTH_EXCEEDED",
+        message: `Maximum cascade depth of ${maxDepth} exceeded`,
+      });
+      return result;
+    }
+
+    // Find organization (including deleted)
+    const organization = await this.findById(documentId)
+      .session(session)
+      .withDeleted();
+
+    if (!organization) {
+      result.errors.push({
+        code: "ORGANIZATION_NOT_FOUND",
+        message: "Organization not found",
+      });
+      return result;
+    }
+
+    // Organization has no parent, so no parent validation needed
+
+    // Run pre-condition validations
+    if (!skipValidation) {
+      const validation = await this.validateRestoration(organization, session);
+      result.warnings.push(...validation.warnings);
+
+      if (!validation.valid) {
+        result.errors.push(...validation.errors);
+        return result;
+      }
+    }
+
+    // Restore organization
+    await organization.restore(session);
+    result.restoredCount++;
+
+    // Cascade restore child resources
+    const Department = mongoose.model("Department");
+    const User = mongoose.model("User");
+    const Task = mongoose.model("Task");
+    const Material = mongoose.model("Material");
+    const Vendor = mongoose.model("Vendor");
+    const Notification = mongoose.model("Notification");
+
+    // Restore departments
+    const departments = await Department.find({
+      organization: documentId,
+      isDeleted: true,
+    }).session(session);
+
+    for (const dept of departments) {
+      const deptResult = await Department.cascadeRestore(dept._id, session, {
+        ...options,
+        depth: depth + 1,
+      });
+      result.restoredCount += deptResult.restoredCount;
+      result.warnings.push(...deptResult.warnings);
+      result.errors.push(...deptResult.errors);
+    }
+
+    // Restore users
+    const users = await User.find({
+      organization: documentId,
+      isDeleted: true,
+    }).session(session);
+
+    for (const user of users) {
+      const userResult = await User.cascadeRestore(user._id, session, {
+        ...options,
+        depth: depth + 1,
+      });
+      result.restoredCount += userResult.restoredCount;
+      result.warnings.push(...userResult.warnings);
+      result.errors.push(...userResult.errors);
+    }
+
+    // Restore tasks
+    const tasks = await Task.find({
+      organization: documentId,
+      isDeleted: true,
+    }).session(session);
+
+    for (const task of tasks) {
+      const taskResult = await Task.cascadeRestore(task._id, session, {
+        ...options,
+        depth: depth + 1,
+      });
+      result.restoredCount += taskResult.restoredCount;
+      result.warnings.push(...taskResult.warnings);
+      result.errors.push(...taskResult.errors);
+    }
+
+    // Restore materials
+    const materials = await Material.find({
+      organization: documentId,
+      isDeleted: true,
+    }).session(session);
+
+    for (const material of materials) {
+      await material.restore(session);
+      result.restoredCount++;
+    }
+
+    // Restore vendors
+    const vendors = await Vendor.find({
+      organization: documentId,
+      isDeleted: true,
+    }).session(session);
+
+    for (const vendor of vendors) {
+      await vendor.restore(session);
+      result.restoredCount++;
+    }
+
+    // Restore notifications
+    const notifications = await Notification.find({
+      organization: documentId,
+      isDeleted: true,
+    }).session(session);
+
+    for (const notification of notifications) {
+      await notification.restore(session);
+      result.restoredCount++;
+    }
+
+    result.success = true;
+    return result;
+  } catch (error) {
+    result.errors.push({
+      code: "CASCADE_RESTORE_ERROR",
+      message: error.message,
+      stack: error.stack,
+    });
+    return result;
+  }
 };
 
 // Virtual for department count (exclude soft-deleted)

@@ -171,6 +171,392 @@ routineTaskSchema.index(
   }
 );
 
+/**
+ * Validate deletion pre-conditions for RoutineTask
+ * @param {mongoose.Document} document - RoutineTask document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+routineTaskSchema.statics.validateDeletion = async function (
+  document,
+  session = null
+) {
+  // Call base Task validation
+  const baseValidation = await Task.validateDeletion(document, session);
+  const errors = [...baseValidation.errors];
+  const warnings = [...baseValidation.warnings];
+
+  try {
+    // Check for materials
+    if (document.materials && document.materials.length > 0) {
+      warnings.push({
+        code: "MATERIALS_PRESENT",
+        message: `Task has ${document.materials.length} materials that will be removed`,
+        materialCount: document.materials.length,
+      });
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Validate restoration pre-conditions for RoutineTask
+ * @param {mongoose.Document} document - RoutineTask document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+routineTaskSchema.statics.validateRestoration = async function (
+  document,
+  session = null
+) {
+  // Call base Task validation
+  const baseValidation = await Task.validateRestoration(document, session);
+  const errors = [...baseValidation.errors];
+  const warnings = [...baseValidation.warnings];
+
+  try {
+    const Material = mongoose.model("Material");
+
+    // Pre-condition 1: Date validation
+    if (document.date > new Date() && !document.recurrence.frequency) {
+      warnings.push({
+        code: "FUTURE_DATE",
+        message: "Task date is in the future for non-recurring task",
+        field: "date",
+        date: document.date,
+      });
+    }
+
+    // Pre-condition 2: Recurrence validation
+    if (
+      document.recurrence &&
+      document.recurrence.endDate &&
+      document.recurrence.endDate <= document.date
+    ) {
+      errors.push({
+        code: "INVALID_RECURRENCE_END_DATE",
+        message: "Recurrence end date must be after task date",
+        field: "recurrence.endDate",
+      });
+    }
+
+    // Pre-condition 3: Materials validation
+    if (document.materials && document.materials.length > 0) {
+      const materialIds = document.materials.map((m) => m.material);
+      const materials = await Material.find({
+        _id: { $in: materialIds },
+      })
+        .session(session)
+        .withDeleted();
+
+      // Check for deleted materials
+      const deletedMaterials = materials.filter((m) => m.isDeleted);
+      if (deletedMaterials.length > 0) {
+        errors.push({
+          code: "MATERIALS_DELETED",
+          message: `${deletedMaterials.length} materials are deleted and cannot be restored`,
+          field: "materials",
+          deletedMaterialIds: deletedMaterials.map((m) => m._id),
+        });
+      }
+
+      // Check for materials not found
+      if (materials.length < materialIds.length) {
+        errors.push({
+          code: "MATERIALS_NOT_FOUND",
+          message: `${
+            materialIds.length - materials.length
+          } materials not found`,
+          field: "materials",
+        });
+      }
+
+      // Check materials belong to same org/dept
+      const invalidMaterials = materials.filter(
+        (m) =>
+          m.organization.toString() !== document.organization.toString() ||
+          m.department.toString() !== document.department.toString()
+      );
+
+      if (invalidMaterials.length > 0) {
+        errors.push({
+          code: "MATERIALS_WRONG_ORG_DEPT",
+          message:
+            "All materials must belong to the same organization and department",
+          field: "materials",
+          invalidMaterialIds: invalidMaterials.map((m) => m._id),
+        });
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Cascade delete RoutineTask
+ * NO TaskActivities (design constraint)
+ * @param {mongoose.Types.ObjectId} documentId - RoutineTask ID
+ * @param {mongoose.Types.ObjectId} deletedBy - User performing deletion
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, deletedCount: number, warnings: Array, errors: Array}>}
+ */
+routineTaskSchema.statics.cascadeDelete = async function (
+  documentId,
+  deletedBy,
+  session,
+  options = {}
+) {
+  const {
+    skipValidation = false,
+    force = false,
+    depth = 0,
+    maxDepth = 10,
+  } = options;
+
+  const result = {
+    success: false,
+    deletedCount: 0,
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    if (depth >= maxDepth) {
+      result.errors.push({
+        code: "MAX_DEPTH_EXCEEDED",
+        message: `Maximum cascade depth of ${maxDepth} exceeded`,
+      });
+      return result;
+    }
+
+    const task = await this.findById(documentId).session(session).withDeleted();
+
+    if (!task) {
+      result.errors.push({
+        code: "ROUTINE_TASK_NOT_FOUND",
+        message: "Routine task not found",
+      });
+      return result;
+    }
+
+    if (!skipValidation) {
+      const validation = await this.validateDeletion(task, session);
+      result.warnings.push(...validation.warnings);
+
+      if (!validation.valid && !force) {
+        result.errors.push(...validation.errors);
+        return result;
+      }
+    }
+
+    await task.softDelete(deletedBy, session);
+    result.deletedCount++;
+
+    const TaskComment = mongoose.model("TaskComment");
+    const Attachment = mongoose.model("Attachment");
+    const Notification = mongoose.model("Notification");
+
+    // Delete task comments (NO TaskActivities for RoutineTask)
+    const comments = await TaskComment.find({
+      parent: documentId,
+      parentModel: "Task",
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const comment of comments) {
+      const commentResult = await TaskComment.cascadeDelete(
+        comment._id,
+        deletedBy,
+        session,
+        { ...options, depth: depth + 1 }
+      );
+      result.deletedCount += commentResult.deletedCount;
+      result.warnings.push(...commentResult.warnings);
+      result.errors.push(...commentResult.errors);
+    }
+
+    // Delete attachments
+    const attachments = await Attachment.find({
+      parent: documentId,
+      parentModel: "Task",
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const attachment of attachments) {
+      await attachment.softDelete(deletedBy, session);
+      result.deletedCount++;
+    }
+
+    // Delete notifications
+    const notifications = await Notification.find({
+      entity: documentId,
+      entityModel: "Task",
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const notification of notifications) {
+      await notification.softDelete(deletedBy, session);
+      result.deletedCount++;
+    }
+
+    result.success = true;
+    return result;
+  } catch (error) {
+    result.errors.push({
+      code: "CASCADE_DELETE_ERROR",
+      message: error.message,
+      stack: error.stack,
+    });
+    return result;
+  }
+};
+
+/**
+ * Cascade restore RoutineTask
+ * NO TaskActivities (design constraint)
+ * @param {mongoose.Types.ObjectId} documentId - RoutineTask ID
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, restoredCount: number, warnings: Array, errors: Array}>}
+ */
+routineTaskSchema.statics.cascadeRestore = async function (
+  documentId,
+  session,
+  options = {}
+) {
+  const { skipValidation = false, depth = 0, maxDepth = 10 } = options;
+
+  const result = {
+    success: false,
+    restoredCount: 0,
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    if (depth >= maxDepth) {
+      result.errors.push({
+        code: "MAX_DEPTH_EXCEEDED",
+        message: `Maximum cascade depth of ${maxDepth} exceeded`,
+      });
+      return result;
+    }
+
+    const task = await this.findById(documentId).session(session).withDeleted();
+
+    if (!task) {
+      result.errors.push({
+        code: "ROUTINE_TASK_NOT_FOUND",
+        message: "Routine task not found",
+      });
+      return result;
+    }
+
+    if (!skipValidation) {
+      const validation = await this.validateRestoration(task, session);
+      result.warnings.push(...validation.warnings);
+
+      if (!validation.valid) {
+        result.errors.push(...validation.errors);
+        return result;
+      }
+    }
+
+    await task.restore(session);
+    result.restoredCount++;
+
+    const TaskComment = mongoose.model("TaskComment");
+    const Attachment = mongoose.model("Attachment");
+    const Notification = mongoose.model("Notification");
+
+    // Restore task comments (NO TaskActivities for RoutineTask)
+    const comments = await TaskComment.find({
+      parent: documentId,
+      parentModel: "Task",
+      isDeleted: true,
+    }).session(session);
+
+    for (const comment of comments) {
+      const commentResult = await TaskComment.cascadeRestore(
+        comment._id,
+        session,
+        {
+          ...options,
+          depth: depth + 1,
+        }
+      );
+      result.restoredCount += commentResult.restoredCount;
+      result.warnings.push(...commentResult.warnings);
+      result.errors.push(...commentResult.errors);
+    }
+
+    // Restore attachments
+    const attachments = await Attachment.find({
+      parent: documentId,
+      parentModel: "Task",
+      isDeleted: true,
+    }).session(session);
+
+    for (const attachment of attachments) {
+      await attachment.restore(session);
+      result.restoredCount++;
+    }
+
+    // Restore notifications
+    const notifications = await Notification.find({
+      entity: documentId,
+      entityModel: "Task",
+      isDeleted: true,
+    }).session(session);
+
+    for (const notification of notifications) {
+      await notification.restore(session);
+      result.restoredCount++;
+    }
+
+    result.success = true;
+    return result;
+  } catch (error) {
+    result.errors.push({
+      code: "CASCADE_RESTORE_ERROR",
+      message: error.message,
+      stack: error.stack,
+    });
+    return result;
+  }
+};
+
 const RoutineTask = Task.discriminator("RoutineTask", routineTaskSchema);
 
 export default RoutineTask;

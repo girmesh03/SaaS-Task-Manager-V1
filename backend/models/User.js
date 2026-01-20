@@ -12,6 +12,28 @@ import {
 } from "../utils/constants.js";
 
 /**
+ * Transform function to sanitize user documents
+ * Removes sensitive fields and virtual 'id' from serialized output
+ * Applied to both toJSON and toObject for consistency
+ */
+const transformUserDocument = (doc, ret) => {
+  // Remove virtual 'id' (keep _id only)
+  delete ret.id;
+
+  // Remove version key (redundant with versionKey: false, but defensive)
+  delete ret.__v;
+
+  // Remove sensitive fields (defense-in-depth: these have select: false)
+  delete ret.password;
+  delete ret.refreshToken;
+  delete ret.refreshTokenExpiry;
+  delete ret.passwordResetToken;
+  delete ret.passwordResetExpiry;
+
+  return ret;
+};
+
+/**
  * User Model
  *
  * System users belonging to department and organization
@@ -269,8 +291,15 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    versionKey: false,
+    toJSON: {
+      virtuals: true,
+      transform: transformUserDocument,
+    },
+    toObject: {
+      virtuals: true,
+      transform: transformUserDocument,
+    },
   }
 );
 
@@ -428,6 +457,508 @@ userSchema.statics.isLastHodInDept = async function (
   );
 
   return hodCount === 0;
+};
+
+/**
+ * Validate deletion pre-conditions for User
+ * @param {mongoose.Document} document - User document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+userSchema.statics.validateDeletion = async function (
+  document,
+  session = null
+) {
+  const errors = [];
+  const warnings = [];
+
+  try {
+    // Pre-condition 1: Cannot delete last SuperAdmin in organization
+    const isLastSuperAdmin = await this.isLastSuperAdminInOrg(
+      document._id,
+      document.organization,
+      session
+    );
+
+    if (isLastSuperAdmin && document.role === USER_ROLES.SUPER_ADMIN) {
+      errors.push({
+        code: "LAST_SUPER_ADMIN",
+        message: "Cannot delete the last SuperAdmin in the organization",
+        field: "role",
+      });
+    }
+
+    // Pre-condition 2: Cannot delete last HOD in department
+    if (document.isHod) {
+      const isLastHod = await this.isLastHodInDept(
+        document._id,
+        document.department,
+        session
+      );
+
+      if (isLastHod) {
+        errors.push({
+          code: "LAST_HOD",
+          message: "Cannot delete the last HOD in the department",
+          field: "isHod",
+        });
+      }
+    }
+
+    // Pre-condition 3: Cannot delete platform users
+    if (document.isPlatformUser === true) {
+      errors.push({
+        code: "PLATFORM_USER_DELETE_FORBIDDEN",
+        message: "Platform users cannot be deleted",
+        field: "isPlatformUser",
+      });
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Validate restoration pre-conditions for User
+ * @param {mongoose.Document} document - User document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+userSchema.statics.validateRestoration = async function (
+  document,
+  session = null
+) {
+  const errors = [];
+  const warnings = [];
+
+  try {
+    const Organization = mongoose.model("Organization");
+    const Department = mongoose.model("Department");
+
+    // Pre-condition 1: Parent organization must exist and NOT be deleted
+    const organization = await Organization.findById(document.organization)
+      .session(session)
+      .withDeleted();
+
+    if (!organization) {
+      errors.push({
+        code: "ORGANIZATION_NOT_FOUND",
+        message: "Parent organization not found",
+        field: "organization",
+      });
+    } else if (organization.isDeleted) {
+      errors.push({
+        code: "ORGANIZATION_DELETED",
+        message: "Cannot restore user because parent organization is deleted",
+        field: "organization",
+        organizationId: organization._id,
+      });
+    }
+
+    // Pre-condition 2: Parent department must exist and NOT be deleted
+    const department = await Department.findById(document.department)
+      .session(session)
+      .withDeleted();
+
+    if (!department) {
+      errors.push({
+        code: "DEPARTMENT_NOT_FOUND",
+        message: "Parent department not found",
+        field: "department",
+      });
+    } else if (department.isDeleted) {
+      errors.push({
+        code: "DEPARTMENT_DELETED",
+        message: "Cannot restore user because parent department is deleted",
+        field: "department",
+        departmentId: department._id,
+      });
+    }
+
+    // Pre-condition 3: Check for duplicate email within organization
+    const emailConflict = await this.findOne({
+      email: document.email,
+      organization: document.organization,
+      _id: { $ne: document._id },
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    if (emailConflict) {
+      errors.push({
+        code: "DUPLICATE_EMAIL",
+        message: `Another user with email '${document.email}' already exists in this organization`,
+        field: "email",
+        conflictId: emailConflict._id,
+      });
+    }
+
+    // Pre-condition 4: Check for duplicate employeeId within organization
+    const employeeIdConflict = await this.findOne({
+      employeeId: document.employeeId,
+      organization: document.organization,
+      _id: { $ne: document._id },
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    if (employeeIdConflict) {
+      errors.push({
+        code: "DUPLICATE_EMPLOYEE_ID",
+        message: `Another user with employee ID '${document.employeeId}' already exists in this organization`,
+        field: "employeeId",
+        conflictId: employeeIdConflict._id,
+      });
+    }
+
+    // Pre-condition 5: Cannot restore platform users to non-platform organizations
+    if (
+      document.isPlatformUser &&
+      organization &&
+      !organization.isPlatformOrg
+    ) {
+      errors.push({
+        code: "PLATFORM_USER_NON_PLATFORM_ORG",
+        message: "Cannot restore platform user to non-platform organization",
+        field: "isPlatformUser",
+      });
+    }
+
+    // Warning: Password reset tokens and refresh tokens expire
+    if (document.passwordResetToken || document.refreshToken) {
+      warnings.push({
+        code: "TOKENS_EXPIRED",
+        message:
+          "Password reset tokens and refresh tokens have expired and cannot be restored",
+      });
+    }
+
+    // Warning: Account lockout status may need resetting
+    if (
+      document.accountLockedUntil &&
+      document.accountLockedUntil > new Date()
+    ) {
+      warnings.push({
+        code: "ACCOUNT_LOCKED",
+        message: "Account is locked and may need manual unlocking",
+        lockedUntil: document.accountLockedUntil,
+      });
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Cascade delete user with all pre-condition validations
+ * @param {mongoose.Types.ObjectId} documentId - User ID
+ * @param {mongoose.Types.ObjectId} deletedBy - User performing deletion
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, deletedCount: number, warnings: Array, errors: Array}>}
+ */
+userSchema.statics.cascadeDelete = async function (
+  documentId,
+  deletedBy,
+  session,
+  options = {}
+) {
+  const {
+    skipValidation = false,
+    force = false,
+    depth = 0,
+    maxDepth = 10,
+  } = options;
+
+  const result = {
+    success: false,
+    deletedCount: 0,
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    if (depth >= maxDepth) {
+      result.errors.push({
+        code: "MAX_DEPTH_EXCEEDED",
+        message: `Maximum cascade depth of ${maxDepth} exceeded`,
+      });
+      return result;
+    }
+
+    const user = await this.findById(documentId).session(session).withDeleted();
+
+    if (!user) {
+      result.errors.push({
+        code: "USER_NOT_FOUND",
+        message: "User not found",
+      });
+      return result;
+    }
+
+    if (!skipValidation) {
+      const validation = await this.validateDeletion(user, session);
+      result.warnings.push(...validation.warnings);
+
+      if (!validation.valid && !force) {
+        result.errors.push(...validation.errors);
+        return result;
+      }
+    }
+
+    await user.softDelete(deletedBy, session);
+    result.deletedCount++;
+
+    const Task = mongoose.model("Task");
+    const TaskActivity = mongoose.model("TaskActivity");
+    const TaskComment = mongoose.model("TaskComment");
+
+    // Delete tasks created by user
+    const tasks = await Task.find({
+      createdBy: documentId,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const task of tasks) {
+      const taskResult = await Task.cascadeDelete(
+        task._id,
+        deletedBy,
+        session,
+        { ...options, depth: depth + 1 }
+      );
+      result.deletedCount += taskResult.deletedCount;
+      result.warnings.push(...taskResult.warnings);
+      result.errors.push(...taskResult.errors);
+    }
+
+    // Delete task activities created by user
+    const activities = await TaskActivity.find({
+      createdBy: documentId,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const activity of activities) {
+      const activityResult = await TaskActivity.cascadeDelete(
+        activity._id,
+        deletedBy,
+        session,
+        { ...options, depth: depth + 1 }
+      );
+      result.deletedCount += activityResult.deletedCount;
+      result.warnings.push(...activityResult.warnings);
+      result.errors.push(...activityResult.errors);
+    }
+
+    // Delete task comments created by user
+    const comments = await TaskComment.find({
+      createdBy: documentId,
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const comment of comments) {
+      const commentResult = await TaskComment.cascadeDelete(
+        comment._id,
+        deletedBy,
+        session,
+        { ...options, depth: depth + 1 }
+      );
+      result.deletedCount += commentResult.deletedCount;
+      result.warnings.push(...commentResult.warnings);
+      result.errors.push(...commentResult.errors);
+    }
+
+    // Remove user from task watchers, assignees, mentions, notification recipients
+    await Task.updateMany(
+      { watchers: documentId },
+      { $pull: { watchers: documentId } },
+      { session }
+    );
+
+    await Task.updateMany(
+      { assignees: documentId },
+      { $pull: { assignees: documentId } },
+      { session }
+    );
+
+    await TaskComment.updateMany(
+      { mentions: documentId },
+      { $pull: { mentions: documentId } },
+      { session }
+    );
+
+    const Notification = mongoose.model("Notification");
+    await Notification.updateMany(
+      { recipients: documentId },
+      { $pull: { recipients: documentId } },
+      { session }
+    );
+
+    result.success = true;
+    return result;
+  } catch (error) {
+    result.errors.push({
+      code: "CASCADE_DELETE_ERROR",
+      message: error.message,
+      stack: error.stack,
+    });
+    return result;
+  }
+};
+
+/**
+ * Cascade restore user with all pre-condition validations
+ * @param {mongoose.Types.ObjectId} documentId - User ID
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, restoredCount: number, warnings: Array, errors: Array}>}
+ */
+userSchema.statics.cascadeRestore = async function (
+  documentId,
+  session,
+  options = {}
+) {
+  const {
+    skipValidation = false,
+    validateParents = true,
+    depth = 0,
+    maxDepth = 10,
+  } = options;
+
+  const result = {
+    success: false,
+    restoredCount: 0,
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    if (depth >= maxDepth) {
+      result.errors.push({
+        code: "MAX_DEPTH_EXCEEDED",
+        message: `Maximum cascade depth of ${maxDepth} exceeded`,
+      });
+      return result;
+    }
+
+    const user = await this.findById(documentId).session(session).withDeleted();
+
+    if (!user) {
+      result.errors.push({
+        code: "USER_NOT_FOUND",
+        message: "User not found",
+      });
+      return result;
+    }
+
+    if (!skipValidation) {
+      const validation = await this.validateRestoration(user, session);
+      result.warnings.push(...validation.warnings);
+
+      if (!validation.valid) {
+        result.errors.push(...validation.errors);
+        return result;
+      }
+    }
+
+    await user.restore(session);
+    result.restoredCount++;
+
+    const Task = mongoose.model("Task");
+    const TaskActivity = mongoose.model("TaskActivity");
+    const TaskComment = mongoose.model("TaskComment");
+
+    // Restore tasks created by user
+    const tasks = await Task.find({
+      createdBy: documentId,
+      isDeleted: true,
+    }).session(session);
+
+    for (const task of tasks) {
+      const taskResult = await Task.cascadeRestore(task._id, session, {
+        ...options,
+        depth: depth + 1,
+      });
+      result.restoredCount += taskResult.restoredCount;
+      result.warnings.push(...taskResult.warnings);
+      result.errors.push(...taskResult.errors);
+    }
+
+    // Restore task activities created by user
+    const activities = await TaskActivity.find({
+      createdBy: documentId,
+      isDeleted: true,
+    }).session(session);
+
+    for (const activity of activities) {
+      const activityResult = await TaskActivity.cascadeRestore(
+        activity._id,
+        session,
+        {
+          ...options,
+          depth: depth + 1,
+        }
+      );
+      result.restoredCount += activityResult.restoredCount;
+      result.warnings.push(...activityResult.warnings);
+      result.errors.push(...activityResult.errors);
+    }
+
+    // Restore task comments created by user
+    const comments = await TaskComment.find({
+      createdBy: documentId,
+      isDeleted: true,
+    }).session(session);
+
+    for (const comment of comments) {
+      const commentResult = await TaskComment.cascadeRestore(
+        comment._id,
+        session,
+        {
+          ...options,
+          depth: depth + 1,
+        }
+      );
+      result.restoredCount += commentResult.restoredCount;
+      result.warnings.push(...commentResult.warnings);
+      result.errors.push(...commentResult.errors);
+    }
+
+    result.success = true;
+    return result;
+  } catch (error) {
+    result.errors.push({
+      code: "CASCADE_RESTORE_ERROR",
+      message: error.message,
+      stack: error.stack,
+    });
+    return result;
+  }
 };
 
 const User = mongoose.model("User", userSchema);

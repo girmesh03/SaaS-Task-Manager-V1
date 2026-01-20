@@ -135,6 +135,198 @@ assignedTaskSchema.index(
   }
 );
 
+/**
+ * Validate deletion pre-conditions for AssignedTask
+ * Inherits from Task and adds assignee-specific checks
+ * @param {mongoose.Document} document - AssignedTask document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+assignedTaskSchema.statics.validateDeletion = async function (
+  document,
+  session = null
+) {
+  // Call base Task validation
+  const baseValidation = await Task.validateDeletion(document, session);
+  const errors = [...baseValidation.errors];
+  const warnings = [...baseValidation.warnings];
+
+  try {
+    // Check for assignees
+    if (document.assignees && document.assignees.length > 0) {
+      warnings.push({
+        code: "ASSIGNEES_PRESENT",
+        message: `Task has ${document.assignees.length} assignees`,
+        assigneeCount: document.assignees.length,
+      });
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Validate restoration pre-conditions for AssignedTask
+ * Inherits from Task and adds assignee-specific checks
+ * @param {mongoose.Document} document - AssignedTask document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+assignedTaskSchema.statics.validateRestoration = async function (
+  document,
+  session = null
+) {
+  // Call base Task validation
+  const baseValidation = await Task.validateRestoration(document, session);
+  const errors = [...baseValidation.errors];
+  const warnings = [...baseValidation.warnings];
+
+  try {
+    const User = mongoose.model("User");
+
+    // Pre-condition 1: At least one assignee must exist and NOT be deleted
+    if (!document.assignees || document.assignees.length === 0) {
+      errors.push({
+        code: "NO_ASSIGNEES",
+        message: "At least one assignee is required",
+        field: "assignees",
+      });
+    } else {
+      const assignees = await User.find({
+        _id: { $in: document.assignees },
+      })
+        .session(session)
+        .withDeleted();
+
+      // Check for deleted assignees
+      const deletedAssignees = assignees.filter((a) => a.isDeleted);
+      if (deletedAssignees.length > 0) {
+        warnings.push({
+          code: "ASSIGNEES_DELETED",
+          message: `${deletedAssignees.length} assignees are deleted and will be removed`,
+          deletedAssigneeIds: deletedAssignees.map((a) => a._id),
+        });
+      }
+
+      // Check if at least one active assignee exists
+      const activeAssignees = assignees.filter((a) => !a.isDeleted);
+      if (activeAssignees.length === 0) {
+        errors.push({
+          code: "NO_ACTIVE_ASSIGNEES",
+          message: "At least one active assignee is required",
+          field: "assignees",
+        });
+      }
+
+      // Pre-condition 2: All assignees must belong to same organization
+      const invalidAssignees = assignees.filter(
+        (a) => a.organization.toString() !== document.organization.toString()
+      );
+
+      if (invalidAssignees.length > 0) {
+        errors.push({
+          code: "ASSIGNEES_WRONG_ORG",
+          message: "All assignees must belong to the same organization",
+          field: "assignees",
+          invalidAssigneeIds: invalidAssignees.map((a) => a._id),
+        });
+      }
+
+      // Pre-condition 3: Assignees must be unique
+      const uniqueAssignees = new Set(
+        document.assignees.map((a) => a.toString())
+      );
+      if (uniqueAssignees.size !== document.assignees.length) {
+        errors.push({
+          code: "DUPLICATE_ASSIGNEES",
+          message: "Assignees must be unique",
+          field: "assignees",
+        });
+      }
+
+      // Pre-condition 4: Assignees count within limits
+      if (
+        document.assignees.length < TASK_VALIDATION.ASSIGNEES.MIN_COUNT ||
+        document.assignees.length > TASK_VALIDATION.ASSIGNEES.MAX_COUNT
+      ) {
+        errors.push({
+          code: "INVALID_ASSIGNEE_COUNT",
+          message: `Assignees count must be between ${TASK_VALIDATION.ASSIGNEES.MIN_COUNT} and ${TASK_VALIDATION.ASSIGNEES.MAX_COUNT}`,
+          field: "assignees",
+          count: document.assignees.length,
+        });
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Cascade delete AssignedTask
+ * Inherits from Task base cascade delete
+ * @param {mongoose.Types.ObjectId} documentId - AssignedTask ID
+ * @param {mongoose.Types.ObjectId} deletedBy - User performing deletion
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, deletedCount: number, warnings: Array, errors: Array}>}
+ */
+assignedTaskSchema.statics.cascadeDelete = async function (
+  documentId,
+  deletedBy,
+  session,
+  options = {}
+) {
+  // AssignedTask uses base Task cascade delete behavior
+  return await Task.cascadeDelete(documentId, deletedBy, session, options);
+};
+
+/**
+ * Cascade restore AssignedTask
+ * Inherits from Task base cascade restore with assignee validation
+ * @param {mongoose.Types.ObjectId} documentId - AssignedTask ID
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, restoredCount: number, warnings: Array, errors: Array}>}
+ */
+assignedTaskSchema.statics.cascadeRestore = async function (
+  documentId,
+  session,
+  options = {}
+) {
+  // AssignedTask uses base Task cascade restore behavior
+  // Assignee validation is handled in validateRestoration
+  return await Task.cascadeRestore(documentId, session, options);
+};
+
 const AssignedTask = Task.discriminator("AssignedTask", assignedTaskSchema);
 
 export default AssignedTask;

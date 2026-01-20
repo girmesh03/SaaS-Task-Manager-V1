@@ -174,9 +174,9 @@ app.get("/health", async (req, res) => {
 });
 
 // API routes will be added here
-// app.use('/api/auth', authRoutes);
-// app.use('/api/users', userRoutes);
-// ... other routes
+import { authRoutes } from "./routes/index.js";
+
+app.use("/api/auth", authRoutes);
 
 // 404 handler for undefined routes
 app.use((req, res) => {

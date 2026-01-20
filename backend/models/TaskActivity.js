@@ -156,8 +156,23 @@ const taskActivitySchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    versionKey: false,
+    toJSON: {
+      virtuals: true,
+      transform: (doc, ret) => {
+        delete ret.id;
+        delete ret.__v;
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: (doc, ret) => {
+        delete ret.id;
+        delete ret.__v;
+        return ret;
+      },
+    },
   }
 );
 
@@ -244,6 +259,455 @@ taskActivitySchema.virtual("commentCount", {
   foreignField: "activity",
   count: true,
 });
+
+/**
+ * Validate deletion pre-conditions for TaskActivity
+ * @param {mongoose.Document} document - TaskActivity document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+taskActivitySchema.statics.validateDeletion = async function (
+  document,
+  session = null
+) {
+  const errors = [];
+  const warnings = [];
+
+  try {
+    const Task = mongoose.model("Task");
+
+    // Pre-condition 1: Check parent task type (cannot exist for RoutineTask)
+    const task = await Task.findById(document.task)
+      .session(session)
+      .withDeleted();
+
+    if (!task) {
+      errors.push({
+        code: "TASK_NOT_FOUND",
+        message: "Parent task not found",
+        field: "task",
+      });
+    } else if (task.taskType === TASK_TYPES.ROUTINE) {
+      errors.push({
+        code: "ROUTINE_TASK_ACTIVITY",
+        message: "TaskActivity cannot exist for RoutineTask",
+        field: "task",
+      });
+    }
+
+    // Warning: TTL check
+    const daysSinceCreation = Math.floor(
+      (new Date() - document.createdAt) / (1000 * 60 * 60 * 24)
+    );
+    if (daysSinceCreation > 60) {
+      warnings.push({
+        code: "APPROACHING_TTL",
+        message: `Activity is ${daysSinceCreation} days old (TTL: 90 days)`,
+        daysSinceCreation,
+      });
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Validate restoration pre-conditions for TaskActivity
+ * @param {mongoose.Document} document - TaskActivity document
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @returns {Promise<{valid: boolean, errors: Array, warnings: Array}>}
+ */
+taskActivitySchema.statics.validateRestoration = async function (
+  document,
+  session = null
+) {
+  const errors = [];
+  const warnings = [];
+
+  try {
+    const Task = mongoose.model("Task");
+    const Organization = mongoose.model("Organization");
+    const Department = mongoose.model("Department");
+    const User = mongoose.model("User");
+    const Material = mongoose.model("Material");
+
+    // Pre-condition 1: Parent task must exist and NOT be deleted
+    const task = await Task.findById(document.task)
+      .session(session)
+      .withDeleted();
+
+    if (!task) {
+      errors.push({
+        code: "TASK_NOT_FOUND",
+        message: "Parent task not found",
+        field: "task",
+      });
+    } else if (task.isDeleted) {
+      errors.push({
+        code: "TASK_DELETED",
+        message: "Cannot restore activity because parent task is deleted",
+        field: "task",
+        taskId: task._id,
+      });
+    } else if (task.taskType === TASK_TYPES.ROUTINE) {
+      errors.push({
+        code: "ROUTINE_TASK_ACTIVITY",
+        message: "TaskActivity cannot be restored for RoutineTask",
+        field: "task",
+      });
+    }
+
+    // Pre-condition 2: Organization must exist and NOT be deleted
+    const organization = await Organization.findById(document.organization)
+      .session(session)
+      .withDeleted();
+
+    if (!organization) {
+      errors.push({
+        code: "ORGANIZATION_NOT_FOUND",
+        message: "Organization not found",
+        field: "organization",
+      });
+    } else if (organization.isDeleted) {
+      errors.push({
+        code: "ORGANIZATION_DELETED",
+        message: "Cannot restore activity because organization is deleted",
+        field: "organization",
+      });
+    }
+
+    // Pre-condition 3: Department must exist and NOT be deleted
+    const department = await Department.findById(document.department)
+      .session(session)
+      .withDeleted();
+
+    if (!department) {
+      errors.push({
+        code: "DEPARTMENT_NOT_FOUND",
+        message: "Department not found",
+        field: "department",
+      });
+    } else if (department.isDeleted) {
+      errors.push({
+        code: "DEPARTMENT_DELETED",
+        message: "Cannot restore activity because department is deleted",
+        field: "department",
+      });
+    }
+
+    // Pre-condition 4: CreatedBy user must exist and NOT be deleted
+    const createdBy = await User.findById(document.createdBy)
+      .session(session)
+      .withDeleted();
+
+    if (!createdBy) {
+      errors.push({
+        code: "CREATED_BY_NOT_FOUND",
+        message: "Activity creator not found",
+        field: "createdBy",
+      });
+    } else if (createdBy.isDeleted) {
+      errors.push({
+        code: "CREATED_BY_DELETED",
+        message: "Cannot restore activity because creator is deleted",
+        field: "createdBy",
+      });
+    }
+
+    // Pre-condition 5: Materials validation
+    if (document.materials && document.materials.length > 0) {
+      const materialIds = document.materials.map((m) => m.material);
+      const materials = await Material.find({
+        _id: { $in: materialIds },
+      })
+        .session(session)
+        .withDeleted();
+
+      const deletedMaterials = materials.filter((m) => m.isDeleted);
+      if (deletedMaterials.length > 0) {
+        warnings.push({
+          code: "MATERIALS_DELETED",
+          message: `${deletedMaterials.length} materials are deleted and will be removed`,
+          deletedMaterialIds: deletedMaterials.map((m) => m._id),
+        });
+      }
+
+      const invalidMaterials = materials.filter(
+        (m) =>
+          m.organization.toString() !== document.organization.toString() ||
+          m.department.toString() !== document.department.toString()
+      );
+
+      if (invalidMaterials.length > 0) {
+        errors.push({
+          code: "MATERIALS_WRONG_ORG_DEPT",
+          message:
+            "All materials must belong to the same organization and department",
+          field: "materials",
+        });
+      }
+    }
+
+    // Pre-condition 6: Attachment count within limits
+    if (
+      document.attachments &&
+      document.attachments.length > ACTIVITY_VALIDATION.ATTACHMENTS.MAX_COUNT
+    ) {
+      errors.push({
+        code: "TOO_MANY_ATTACHMENTS",
+        message: `Attachment count exceeds maximum of ${ACTIVITY_VALIDATION.ATTACHMENTS.MAX_COUNT}`,
+        field: "attachments",
+        count: document.attachments.length,
+      });
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push({
+      code: "VALIDATION_ERROR",
+      message: error.message,
+    });
+    return {
+      valid: false,
+      errors,
+      warnings,
+    };
+  }
+};
+
+/**
+ * Cascade delete TaskActivity with all pre-condition validations
+ * @param {mongoose.Types.ObjectId} documentId - TaskActivity ID
+ * @param {mongoose.Types.ObjectId} deletedBy - User performing deletion
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, deletedCount: number, warnings: Array, errors: Array}>}
+ */
+taskActivitySchema.statics.cascadeDelete = async function (
+  documentId,
+  deletedBy,
+  session,
+  options = {}
+) {
+  const {
+    skipValidation = false,
+    force = false,
+    depth = 0,
+    maxDepth = 10,
+  } = options;
+
+  const result = {
+    success: false,
+    deletedCount: 0,
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    if (depth >= maxDepth) {
+      result.errors.push({
+        code: "MAX_DEPTH_EXCEEDED",
+        message: `Maximum cascade depth of ${maxDepth} exceeded`,
+      });
+      return result;
+    }
+
+    const activity = await this.findById(documentId)
+      .session(session)
+      .withDeleted();
+
+    if (!activity) {
+      result.errors.push({
+        code: "TASK_ACTIVITY_NOT_FOUND",
+        message: "Task activity not found",
+      });
+      return result;
+    }
+
+    if (!skipValidation) {
+      const validation = await this.validateDeletion(activity, session);
+      result.warnings.push(...validation.warnings);
+
+      if (!validation.valid && !force) {
+        result.errors.push(...validation.errors);
+        return result;
+      }
+    }
+
+    await activity.softDelete(deletedBy, session);
+    result.deletedCount++;
+
+    const TaskComment = mongoose.model("TaskComment");
+    const Attachment = mongoose.model("Attachment");
+
+    // Delete task comments
+    const comments = await TaskComment.find({
+      parent: documentId,
+      parentModel: "TaskActivity",
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const comment of comments) {
+      const commentResult = await TaskComment.cascadeDelete(
+        comment._id,
+        deletedBy,
+        session,
+        { ...options, depth: depth + 1 }
+      );
+      result.deletedCount += commentResult.deletedCount;
+      result.warnings.push(...commentResult.warnings);
+      result.errors.push(...commentResult.errors);
+    }
+
+    // Delete attachments
+    const attachments = await Attachment.find({
+      parent: documentId,
+      parentModel: "TaskActivity",
+      isDeleted: { $ne: true },
+    }).session(session);
+
+    for (const attachment of attachments) {
+      await attachment.softDelete(deletedBy, session);
+      result.deletedCount++;
+    }
+
+    result.success = true;
+    return result;
+  } catch (error) {
+    result.errors.push({
+      code: "CASCADE_DELETE_ERROR",
+      message: error.message,
+      stack: error.stack,
+    });
+    return result;
+  }
+};
+
+/**
+ * Cascade restore TaskActivity with all pre-condition validations
+ * @param {mongoose.Types.ObjectId} documentId - TaskActivity ID
+ * @param {mongoose.ClientSession} session - MongoDB session
+ * @param {Object} options - Options for cascade operation
+ * @returns {Promise<{success: boolean, restoredCount: number, warnings: Array, errors: Array}>}
+ */
+taskActivitySchema.statics.cascadeRestore = async function (
+  documentId,
+  session,
+  options = {}
+) {
+  const {
+    skipValidation = false,
+    validateParents = true,
+    depth = 0,
+    maxDepth = 10,
+  } = options;
+
+  const result = {
+    success: false,
+    restoredCount: 0,
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    if (depth >= maxDepth) {
+      result.errors.push({
+        code: "MAX_DEPTH_EXCEEDED",
+        message: `Maximum cascade depth of ${maxDepth} exceeded`,
+      });
+      return result;
+    }
+
+    const activity = await this.findById(documentId)
+      .session(session)
+      .withDeleted();
+
+    if (!activity) {
+      result.errors.push({
+        code: "TASK_ACTIVITY_NOT_FOUND",
+        message: "Task activity not found",
+      });
+      return result;
+    }
+
+    if (!skipValidation) {
+      const validation = await this.validateRestoration(activity, session);
+      result.warnings.push(...validation.warnings);
+
+      if (!validation.valid) {
+        result.errors.push(...validation.errors);
+        return result;
+      }
+    }
+
+    await activity.restore(session);
+    result.restoredCount++;
+
+    const TaskComment = mongoose.model("TaskComment");
+    const Attachment = mongoose.model("Attachment");
+
+    // Restore task comments
+    const comments = await TaskComment.find({
+      parent: documentId,
+      parentModel: "TaskActivity",
+      isDeleted: true,
+    }).session(session);
+
+    for (const comment of comments) {
+      const commentResult = await TaskComment.cascadeRestore(
+        comment._id,
+        session,
+        {
+          ...options,
+          depth: depth + 1,
+        }
+      );
+      result.restoredCount += commentResult.restoredCount;
+      result.warnings.push(...commentResult.warnings);
+      result.errors.push(...commentResult.errors);
+    }
+
+    // Restore attachments
+    const attachments = await Attachment.find({
+      parent: documentId,
+      parentModel: "TaskActivity",
+      isDeleted: true,
+    }).session(session);
+
+    for (const attachment of attachments) {
+      await attachment.restore(session);
+      result.restoredCount++;
+    }
+
+    result.success = true;
+    return result;
+  } catch (error) {
+    result.errors.push({
+      code: "CASCADE_RESTORE_ERROR",
+      message: error.message,
+      stack: error.stack,
+    });
+    return result;
+  }
+};
 
 const TaskActivity = mongoose.model("TaskActivity", taskActivitySchema);
 
