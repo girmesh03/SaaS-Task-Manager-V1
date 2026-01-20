@@ -96,9 +96,10 @@ export const sleep = (ms) => {
 
 /**
  * Get pagination options with validation
+ * Used with mongoose-paginate-v2 which handles skip calculation internally
  * @param {number|string} page - Current page number
  * @param {number|string} limit - Items per page
- * @returns {Object} Pagination options { page, limit, skip }
+ * @returns {Object} Pagination options { page, limit }
  */
 export const getPaginationOptions = (page = 1, limit = 10) => {
   let pageNum = parseInt(page, 10);
@@ -118,34 +119,9 @@ export const getPaginationOptions = (page = 1, limit = 10) => {
     limitNum = PAGINATION.MAX_LIMIT;
   }
 
-  const skip = (pageNum - 1) * limitNum;
-
   return {
     page: pageNum,
     limit: limitNum,
-    skip,
-  };
-};
-
-/**
- * Format pagination metadata for API responses
- * @param {number} total - Total number of items
- * @param {number} page - Current page number
- * @param {number} limit - Items per page
- * @returns {Object} Pagination metadata
- */
-export const formatPaginationMeta = (total, page, limit) => {
-  const totalPages = Math.ceil(total / limit);
-
-  return {
-    total,
-    page,
-    limit,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPrevPage: page > 1,
-    nextPage: page < totalPages ? page + 1 : null,
-    prevPage: page > 1 ? page - 1 : null,
   };
 };
 
@@ -248,6 +224,28 @@ export const isEmptyObject = (obj) => {
 };
 
 /**
+ * Escape special regex characters in a string
+ * Prevents regex injection attacks in search queries
+ * @param {string} string - String to escape
+ * @returns {string} Escaped string safe for regex
+ */
+export const escapeRegex = (string) => {
+  if (!string || typeof string !== "string") return "";
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
+/**
+ * Check if user is Platform SuperAdmin
+ * Platform SuperAdmin has cross-organization access
+ * @param {Object} user - User object with role and isPlatformUser
+ * @returns {boolean} True if user is Platform SuperAdmin
+ */
+export const isPlatformSuperAdmin = (user) => {
+  if (!user) return false;
+  return user.role === "SuperAdmin" && user.isPlatformUser === true;
+};
+
+/**
  * Generate a random integer between min and max (inclusive)
  * @param {number} min - Minimum value
  * @param {number} max - Maximum value
@@ -293,7 +291,6 @@ export default {
   formatSuccessResponse,
   sleep,
   getPaginationOptions,
-  formatPaginationMeta,
   removeEmptyValues,
   slugify,
   isValidEmail,
@@ -305,4 +302,6 @@ export default {
   randomInt,
   pick,
   omit,
+  escapeRegex,
+  isPlatformSuperAdmin,
 };

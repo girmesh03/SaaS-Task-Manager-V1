@@ -4,9 +4,11 @@
  */
 
 import authRoutes from "./authRoutes.js";
+import organizationRoutes from "./organizationRoutes.js";
 
-export { authRoutes };
+export { authRoutes, organizationRoutes };
 
 export default {
   authRoutes,
+  organizationRoutes,
 };
