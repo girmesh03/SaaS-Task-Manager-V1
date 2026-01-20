@@ -54,10 +54,11 @@ const departmentSchema = new mongoose.Schema(
     },
 
     // Manager Reference (Requirement 8.1, 8.4)
+    // Note: Not required in schema to allow initial creation, but validated in pre-save middleware
     manager: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: [true, "Manager is required"],
+      required: false, // Allow null during initial creation to resolve circular dependency
     },
 
     // Description
@@ -72,10 +73,11 @@ const departmentSchema = new mongoose.Schema(
     },
 
     // Created By
+    // Note: Not required in schema to allow initial creation, but validated in pre-save middleware
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: [true, "Created by user is required"],
+      required: false, // Allow null during initial creation to resolve circular dependency
     },
   },
   {
@@ -120,17 +122,32 @@ departmentSchema.index(
 departmentSchema.plugin(softDeletePlugin); // Soft delete plugin (Requirement 8.7, 8.8, 8.9)
 departmentSchema.plugin(mongoosePaginate); // Pagination plugin
 
-// Pre-save middleware to validate manager (Requirement 8.3, 8.4)
+// Pre-save middleware to validate manager and createdBy (Requirement 8.3, 8.4)
 departmentSchema.pre("save", async function (next) {
-  // Only validate if manager or organization is modified
-  if (this.isModified("manager") || this.isModified("organization")) {
-    try {
-      // Import User model dynamically to avoid circular dependency
-      const User = mongoose.model("User");
+  // Skip validation if explicitly disabled (for seeding)
+  if (this.$locals.skipValidation) {
+    return next();
+  }
 
-      // Get session from this.$session() if available
-      const session = this.$session();
+  try {
+    // Import User model dynamically to avoid circular dependency
+    const User = mongoose.model("User");
 
+    // Get session from this.$session() if available
+    const session = this.$session();
+
+    // Validate manager is present (unless this is initial creation)
+    if (!this.manager) {
+      return next(new Error("Manager is required"));
+    }
+
+    // Validate createdBy is present (unless this is initial creation)
+    if (!this.createdBy) {
+      return next(new Error("Created by user is required"));
+    }
+
+    // Only validate manager details if manager or organization is modified
+    if (this.isModified("manager") || this.isModified("organization")) {
       // Find the manager
       const manager = await User.findById(this.manager).session(session);
 
@@ -152,13 +169,11 @@ departmentSchema.pre("save", async function (next) {
           )
         );
       }
-
-      next();
-    } catch (error) {
-      next(error);
     }
-  } else {
+
     next();
+  } catch (error) {
+    next(error);
   }
 });
 

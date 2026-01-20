@@ -282,6 +282,25 @@ export const omit = (obj, keys) => {
   return result;
 };
 
+/**
+ * Safely abort a MongoDB transaction
+ * Handles transaction abort errors gracefully
+ * @param {import('mongoose').ClientSession} session - MongoDB session
+ * @param {Error} originalError - Original error that triggered abort
+ * @param {Object} logger - Logger instance
+ * @returns {Promise<void>}
+ */
+export const safeAbortTransaction = async (session, originalError, logger) => {
+  try {
+    await session.abortTransaction();
+  } catch (abortError) {
+    logger.error("Failed to abort transaction", {
+      error: abortError.message,
+      originalError: originalError.message,
+    });
+  }
+};
+
 export default {
   generateRandomString,
   generateRequestId,
@@ -304,4 +323,5 @@ export default {
   omit,
   escapeRegex,
   isPlatformSuperAdmin,
+  safeAbortTransaction,
 };

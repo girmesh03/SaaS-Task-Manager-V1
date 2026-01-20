@@ -17,7 +17,10 @@ import {
   TOKEN_EXPIRY_MS,
 } from "../utils/constants.js";
 import logger from "../utils/logger.js";
-import { formatSuccessResponse } from "../utils/helpers.js";
+import {
+  formatSuccessResponse,
+  safeAbortTransaction,
+} from "../utils/helpers.js";
 
 /**
  * @typedef {Object} UserDocument
@@ -297,14 +300,7 @@ export const register = async (req, res, next) => {
       );
   } catch (error) {
     // Rollback transaction on error
-    try {
-      await session.abortTransaction();
-    } catch (abortError) {
-      logger.error("Failed to abort transaction", {
-        error: abortError.message,
-        originalError: error.message,
-      });
-    }
+    await safeAbortTransaction(session, error, logger);
 
     logger.error("Registration failed", {
       error: error.message,

@@ -5,10 +5,12 @@
 
 import authRoutes from "./authRoutes.js";
 import organizationRoutes from "./organizationRoutes.js";
+import departmentRoutes from "./departmentRoutes.js";
 
-export { authRoutes, organizationRoutes };
+export { authRoutes, organizationRoutes, departmentRoutes };
 
 export default {
   authRoutes,
   organizationRoutes,
+  departmentRoutes,
 };

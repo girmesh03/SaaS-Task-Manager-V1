@@ -8,6 +8,7 @@ import {
   getPaginationOptions,
   escapeRegex,
   isPlatformSuperAdmin as checkIsPlatformSuperAdmin,
+  safeAbortTransaction,
 } from "../utils/helpers.js";
 
 /**
@@ -43,6 +44,24 @@ import {
  * @property {Function} save - Save document
  * @property {Function} toObject - Convert to plain object
  */
+
+/**
+ * Standard population configuration for organization queries
+ * @constant
+ */
+const ORGANIZATION_POPULATE_CONFIG = [
+  {
+    path: "createdBy",
+    select: "firstName lastName email employeeId profilePicture",
+  },
+];
+
+/**
+ * Standard select fields for organization queries
+ * @constant
+ */
+const ORGANIZATION_SELECT_FIELDS =
+  "name description email phone address industry size logo isPlatformOrg subscription settings createdBy createdAt updatedAt isDeleted deletedAt deletedBy";
 
 /**
  * Organization Controller
@@ -132,14 +151,8 @@ export const getAllOrganizations = async (req, res, next) => {
       page: paginationOptions.page,
       limit: paginationOptions.limit,
       sort: { createdAt: -1 },
-      populate: [
-        {
-          path: "createdBy",
-          select: "firstName lastName email employeeId",
-        },
-      ],
-      select:
-        "name description email phone address industry size logo isPlatformOrg subscription settings createdAt updatedAt isDeleted deletedAt",
+      populate: ORGANIZATION_POPULATE_CONFIG,
+      select: ORGANIZATION_SELECT_FIELDS,
       lean: true,
       // Include deleted documents if requested (Requirement 40.3)
       ...(deleted === "true" || deleted === true ? { withDeleted: true } : {}),
@@ -226,13 +239,8 @@ export const getOrganizationById = async (req, res, next) => {
     /** @type {OrganizationDocument | null} */
     const organization = await Organization.findById(organizationId)
       .withDeleted()
-      .populate({
-        path: "createdBy",
-        select: "firstName lastName email employeeId",
-      })
-      .select(
-        "name description email phone address industry size logo isPlatformOrg subscription settings createdAt updatedAt isDeleted deletedAt deletedBy"
-      )
+      .populate(ORGANIZATION_POPULATE_CONFIG)
+      .select(ORGANIZATION_SELECT_FIELDS)
       .lean();
 
     if (!organization) {
@@ -355,17 +363,17 @@ export const updateOrganization = async (req, res, next) => {
     await session.commitTransaction();
 
     // Populate createdBy for response (after transaction commit)
-    await organization.populate({
-      path: "createdBy",
-      select: "firstName lastName email employeeId",
-    });
+    await organization.populate(ORGANIZATION_POPULATE_CONFIG);
 
     logger.info("Organization updated successfully", {
       userId: req.user.userId,
       organizationId: organization._id,
       organizationName: organization.name,
+      operationType: "UPDATE",
+      resourceType: "ORGANIZATION",
     });
 
+    // TODO: Emit Socket.IO event for real-time updates (will be implemented
     // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
 
     // Return success response
@@ -379,14 +387,6 @@ export const updateOrganization = async (req, res, next) => {
       );
   } catch (error) {
     // Rollback transaction on error
-    try {
-      await session.abortTransaction();
-    } catch (abortError) {
-      logger.error("Failed to abort transaction", {
-        error: abortError.message,
-        originalError: error.message,
-      });
-    }
 
     logger.error("Update organization failed", {
       error: error.message,
@@ -484,13 +484,19 @@ export const deleteOrganization = async (req, res, next) => {
     // Check if cascade delete was successful
     if (!cascadeResult.success) {
       // Rollback transaction
-      await session.abortTransaction();
+      await safeAbortTransaction(
+        session,
+        new Error("Cascade delete failed"),
+        logger
+      );
 
       logger.error("Cascade delete failed", {
         userId,
         organizationId,
         errors: cascadeResult.errors,
         warnings: cascadeResult.warnings,
+        operationType: "CASCADE_DELETE",
+        resourceType: "ORGANIZATION",
       });
 
       throw new CustomError(
@@ -511,6 +517,8 @@ export const deleteOrganization = async (req, res, next) => {
       organizationName: organization.name,
       deletedCount: cascadeResult.deletedCount,
       warnings: cascadeResult.warnings,
+      operationType: "CASCADE_DELETE",
+      resourceType: "ORGANIZATION",
     });
 
     // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
@@ -528,14 +536,7 @@ export const deleteOrganization = async (req, res, next) => {
     );
   } catch (error) {
     // Rollback transaction on error
-    try {
-      await session.abortTransaction();
-    } catch (abortError) {
-      logger.error("Failed to abort transaction", {
-        error: abortError.message,
-        originalError: error.message,
-      });
-    }
+    await safeAbortTransaction(session, error, logger);
 
     logger.error("Delete organization failed", {
       error: error.message,
@@ -621,13 +622,19 @@ export const restoreOrganization = async (req, res, next) => {
     // Check if cascade restore was successful
     if (!cascadeResult.success) {
       // Rollback transaction
-      await session.abortTransaction();
+      await safeAbortTransaction(
+        session,
+        new Error("Cascade restore failed"),
+        logger
+      );
 
       logger.error("Cascade restore failed", {
         userId,
         organizationId,
         errors: cascadeResult.errors,
         warnings: cascadeResult.warnings,
+        operationType: "CASCADE_RESTORE",
+        resourceType: "ORGANIZATION",
       });
 
       throw new CustomError(
@@ -648,6 +655,8 @@ export const restoreOrganization = async (req, res, next) => {
       organizationName: organization.name,
       restoredCount: cascadeResult.restoredCount,
       warnings: cascadeResult.warnings,
+      operationType: "CASCADE_RESTORE",
+      resourceType: "ORGANIZATION",
     });
 
     // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
@@ -665,14 +674,7 @@ export const restoreOrganization = async (req, res, next) => {
     );
   } catch (error) {
     // Rollback transaction on error
-    try {
-      await session.abortTransaction();
-    } catch (abortError) {
-      logger.error("Failed to abort transaction", {
-        error: abortError.message,
-        originalError: error.message,
-      });
-    }
+    await safeAbortTransaction(session, error, logger);
 
     logger.error("Restore organization failed", {
       error: error.message,
