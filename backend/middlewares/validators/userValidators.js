@@ -646,4 +646,152 @@ export default {
   deleteUserValidator,
   restoreUserValidator,
   getUserByIdValidator,
+  changePasswordValidator,
+  changeEmailValidator,
+  uploadAvatarValidator,
 };
+
+/**
+ * Change Password Validator
+ * Validates password change request for user
+ */
+export const changePasswordValidator = [
+  param("userId")
+    .trim()
+    .notEmpty()
+    .withMessage("User ID is required")
+    .matches(COMMON_VALIDATION.MONGODB_OBJECTID.PATTERN)
+    .withMessage("Invalid user ID format")
+    .custom(async (value) => {
+      // Check if user exists (including soft-deleted)
+      const user = await User.findById(value).withDeleted().lean();
+      if (!user) {
+        throw new Error("User not found");
+      }
+      if (user.isDeleted) {
+        throw new Error("Cannot change password for deleted user");
+      }
+      return true;
+    }),
+
+  body("oldPassword").trim().notEmpty().withMessage("Old password is required"),
+
+  body("newPassword")
+    .trim()
+    .notEmpty()
+    .withMessage("New password is required")
+    .isLength({
+      min: USER_VALIDATION.PASSWORD.MIN_LENGTH,
+      max: USER_VALIDATION.PASSWORD.MAX_LENGTH,
+    })
+    .withMessage(
+      `Password must be between ${USER_VALIDATION.PASSWORD.MIN_LENGTH} and ${USER_VALIDATION.PASSWORD.MAX_LENGTH} characters`
+    )
+    .matches(
+      process.env.NODE_ENV === "production"
+        ? USER_VALIDATION.PASSWORD.PATTERN_PRODUCTION
+        : USER_VALIDATION.PASSWORD.PATTERN_DEVELOPMENT
+    )
+    .withMessage(
+      process.env.NODE_ENV === "production"
+        ? "Password must contain at least one lowercase letter, one uppercase letter, one digit, and one special character"
+        : "Password must be between 8 and 128 characters"
+    )
+    .custom((value, { req }) => {
+      if (value === req.body.oldPassword) {
+        throw new Error("New password must be different from old password");
+      }
+      return true;
+    }),
+];
+
+/**
+ * Change Email Validator
+ * Validates email change request for user
+ */
+export const changeEmailValidator = [
+  param("userId")
+    .trim()
+    .notEmpty()
+    .withMessage("User ID is required")
+    .matches(COMMON_VALIDATION.MONGODB_OBJECTID.PATTERN)
+    .withMessage("Invalid user ID format")
+    .custom(async (value) => {
+      // Check if user exists (including soft-deleted)
+      const user = await User.findById(value).withDeleted().lean();
+      if (!user) {
+        throw new Error("User not found");
+      }
+      if (user.isDeleted) {
+        throw new Error("Cannot change email for deleted user");
+      }
+      return true;
+    }),
+
+  body("newEmail")
+    .trim()
+    .notEmpty()
+    .withMessage("New email is required")
+    .isEmail()
+    .withMessage("Please provide a valid email address")
+    .normalizeEmail({ gmail_remove_dots: false })
+    .isLength({ max: USER_VALIDATION.EMAIL.MAX_LENGTH })
+    .withMessage(
+      `Email must not exceed ${USER_VALIDATION.EMAIL.MAX_LENGTH} characters`
+    )
+    .custom(async (value, { req }) => {
+      // Check uniqueness within organization (excluding current user, including soft-deleted)
+      const user = await User.findById(req.params.userId).withDeleted().lean();
+      const existingUser = await User.findOne({
+        email: value.toLowerCase(),
+        organization: user.organization,
+        _id: { $ne: req.params.userId },
+      })
+        .withDeleted()
+        .lean();
+      if (existingUser) {
+        throw new Error("Email already exists in this organization");
+      }
+      return true;
+    }),
+];
+
+/**
+ * Upload Avatar Validator
+ * Validates avatar upload request for user
+ */
+export const uploadAvatarValidator = [
+  param("userId")
+    .trim()
+    .notEmpty()
+    .withMessage("User ID is required")
+    .matches(COMMON_VALIDATION.MONGODB_OBJECTID.PATTERN)
+    .withMessage("Invalid user ID format")
+    .custom(async (value) => {
+      // Check if user exists (including soft-deleted)
+      const user = await User.findById(value).withDeleted().lean();
+      if (!user) {
+        throw new Error("User not found");
+      }
+      if (user.isDeleted) {
+        throw new Error("Cannot upload avatar for deleted user");
+      }
+      return true;
+    }),
+
+  body("url")
+    .trim()
+    .notEmpty()
+    .withMessage("Avatar URL is required")
+    .matches(IMAGE_VALIDATION.URL.PATTERN)
+    .withMessage("Please provide a valid Cloudinary URL"),
+
+  body("publicId")
+    .trim()
+    .notEmpty()
+    .withMessage("Public ID is required")
+    .isLength({ max: IMAGE_VALIDATION.PUBLIC_ID.MAX_LENGTH })
+    .withMessage(
+      `Public ID must not exceed ${IMAGE_VALIDATION.PUBLIC_ID.MAX_LENGTH} characters`
+    ),
+];

@@ -178,11 +178,13 @@ import {
   authRoutes,
   organizationRoutes,
   departmentRoutes,
+  userRoutes,
 } from "./routes/index.js";
 
 app.use("/api/auth", authRoutes);
 app.use("/api/organizations", organizationRoutes);
 app.use("/api/departments", departmentRoutes);
+app.use("/api/users", userRoutes);
 
 // 404 handler for undefined routes
 app.use((req, res) => {
