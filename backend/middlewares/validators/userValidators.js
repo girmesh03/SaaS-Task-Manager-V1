@@ -2,7 +2,6 @@ import { body, param, query } from "express-validator";
 import {
   USER_VALIDATION,
   USER_ROLES,
-  PASSWORD,
   SKILL_VALIDATION,
   IMAGE_VALIDATION,
   COMMON_VALIDATION,
@@ -28,9 +27,25 @@ import { User, Organization, Department } from "../../models/index.js";
 export const listUsersValidator = [
   query("deleted")
     .optional()
-    .isBoolean()
-    .withMessage("Deleted must be a boolean value")
-    .toBoolean(),
+    .custom((value) => {
+      // Accept true, false, "true", "false", or "only"
+      if (
+        value === true ||
+        value === false ||
+        value === "true" ||
+        value === "false" ||
+        value === "only"
+      ) {
+        return true;
+      }
+      throw new Error('Deleted must be true, false, or "only"');
+    })
+    .customSanitizer((value) => {
+      // Convert string "true"/"false" to boolean, keep "only" as string
+      if (value === "true") return true;
+      if (value === "false") return false;
+      return value; // true, false, or "only"
+    }),
 
   query("page")
     .optional()
@@ -639,18 +654,6 @@ export const getUserByIdValidator = [
     }),
 ];
 
-export default {
-  listUsersValidator,
-  createUserValidator,
-  updateUserValidator,
-  deleteUserValidator,
-  restoreUserValidator,
-  getUserByIdValidator,
-  changePasswordValidator,
-  changeEmailValidator,
-  uploadAvatarValidator,
-};
-
 /**
  * Change Password Validator
  * Validates password change request for user
@@ -795,3 +798,15 @@ export const uploadAvatarValidator = [
       `Public ID must not exceed ${IMAGE_VALIDATION.PUBLIC_ID.MAX_LENGTH} characters`
     ),
 ];
+
+export default {
+  listUsersValidator,
+  createUserValidator,
+  updateUserValidator,
+  deleteUserValidator,
+  restoreUserValidator,
+  getUserByIdValidator,
+  changePasswordValidator,
+  changeEmailValidator,
+  uploadAvatarValidator,
+};

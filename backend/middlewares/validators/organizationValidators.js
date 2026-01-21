@@ -9,7 +9,7 @@ import {
   INDUSTRIES_SIZE,
   SEARCH_VALIDATION,
 } from "../../utils/constants.js";
-import { Organization, User } from "../../models/index.js";
+import { Organization } from "../../models/index.js";
 
 /**
  * Organization Validators
@@ -33,9 +33,25 @@ import { Organization, User } from "../../models/index.js";
 export const listOrganizationsValidator = [
   query("deleted")
     .optional()
-    .isBoolean()
-    .withMessage("Deleted must be a boolean value")
-    .toBoolean(),
+    .custom((value) => {
+      // Accept true, false, "true", "false", or "only"
+      if (
+        value === true ||
+        value === false ||
+        value === "true" ||
+        value === "false" ||
+        value === "only"
+      ) {
+        return true;
+      }
+      throw new Error('Deleted must be true, false, or "only"');
+    })
+    .customSanitizer((value) => {
+      // Convert string "true"/"false" to boolean, keep "only" as string
+      if (value === "true") return true;
+      if (value === "false") return false;
+      return value; // true, false, or "only"
+    }),
 
   query("page")
     .optional()

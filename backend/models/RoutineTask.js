@@ -4,6 +4,7 @@ import {
   RECURRENCE_FREQUENCY,
   RECURRENCE_VALIDATION,
   MATERIAL_VALIDATION,
+  TASK_PRIORITY,
 } from "../utils/constants.js";
 
 /**
@@ -11,6 +12,7 @@ import {
  *
  * Repetitive tasks for a given date
  * Materials added DIRECTLY to task (no TaskActivity)
+ * Priority CANNOT be LOW - only MEDIUM, HIGH, or URGENT allowed
  *
  * Requirements: 10.6
  */
@@ -109,6 +111,19 @@ const routineTaskSchema = new mongoose.Schema({
     ],
     default: [],
   },
+});
+
+// Pre-save middleware to validate priority for RoutineTask
+routineTaskSchema.pre("save", function (next) {
+  // RoutineTask CANNOT have LOW priority
+  if (this.priority === TASK_PRIORITY.LOW) {
+    return next(
+      new Error(
+        "RoutineTask priority cannot be LOW. Must be MEDIUM, HIGH, or URGENT"
+      )
+    );
+  }
+  next();
 });
 
 // Pre-save middleware to validate recurrence endDate

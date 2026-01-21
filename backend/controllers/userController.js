@@ -285,12 +285,14 @@ export const getAllUsers = async (req, res, next) => {
       populate: USER_POPULATE_CONFIG,
       select: USER_SELECT_FIELDS,
       lean: true,
-      // Include deleted documents if requested (Requirement 40.3)
-      ...(deleted === "true" || deleted === true ? { withDeleted: true } : {}),
     };
 
+    let query = User.find(filter);
+    if (deleted === "true" || deleted === true) query = query.withDeleted();
+    else if (deleted === "only") query = query.onlyDeleted();
+
     // Execute paginated query
-    const result = await User.paginate(filter, options);
+    const result = await User.paginate(query, options);
 
     logger.info("Users retrieved successfully", {
       userId: req.user.userId,

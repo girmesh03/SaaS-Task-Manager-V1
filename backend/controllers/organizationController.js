@@ -154,12 +154,15 @@ export const getAllOrganizations = async (req, res, next) => {
       populate: ORGANIZATION_POPULATE_CONFIG,
       select: ORGANIZATION_SELECT_FIELDS,
       lean: true,
-      // Include deleted documents if requested (Requirement 40.3)
-      ...(deleted === "true" || deleted === true ? { withDeleted: true } : {}),
     };
 
+    // Build query with soft delete handling (Requirement 40.3)
+    let query = Organization.find(filter);
+    if (deleted === "true" || deleted === true) query = query.withDeleted();
+    else if (deleted === "only") query = query.onlyDeleted();
+
     // Execute paginated query
-    const result = await Organization.paginate(filter, options);
+    const result = await Organization.paginate(query, options);
 
     logger.info("Organizations retrieved successfully", {
       userId: req.user.userId,
@@ -340,6 +343,15 @@ export const updateOrganization = async (req, res, next) => {
       );
     }
 
+    // Customer users cannot modify platform organization
+    if (!isPlatformSuperAdmin && organization.isPlatformOrg) {
+      throw new CustomError(
+        "Customer users cannot modify platform organization",
+        HTTP_STATUS.FORBIDDEN,
+        ERROR_CODES.FORBIDDEN_ERROR
+      );
+    }
+
     // Customer SuperAdmin can only update own organization
     if (!isPlatformSuperAdmin) {
       if (organizationId !== userOrganization._id.toString()) {
@@ -387,6 +399,7 @@ export const updateOrganization = async (req, res, next) => {
       );
   } catch (error) {
     // Rollback transaction on error
+    await safeAbortTransaction(session, error, logger);
 
     logger.error("Update organization failed", {
       error: error.message,

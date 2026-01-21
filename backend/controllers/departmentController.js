@@ -123,12 +123,15 @@ export const getAllDepartments = async (req, res, next) => {
       populate: DEPARTMENT_POPULATE_CONFIG,
       select: DEPARTMENT_SELECT_FIELDS,
       lean: true,
-      // Include deleted documents if requested (Requirement 40.3)
-      ...(deleted === "true" || deleted === true ? { withDeleted: true } : {}),
     };
 
+    // Build query with soft delete handling (Requirement 40.3)
+    let query = Department.find(filter);
+    if (deleted === "true" || deleted === true) query = query.withDeleted();
+    else if (deleted === "only") query = query.onlyDeleted();
+
     // Execute paginated query
-    const result = await Department.paginate(filter, options);
+    const result = await Department.paginate(query, options);
 
     logger.info("Departments retrieved successfully", {
       userId: req.user.userId,

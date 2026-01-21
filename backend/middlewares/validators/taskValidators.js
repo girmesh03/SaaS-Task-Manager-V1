@@ -31,6 +31,73 @@ import {
  */
 
 /**
+ * Validate Watchers Helper
+ * Reusable validation logic for watchers field
+ * Ensures watchers are HODs within the organization
+ * @param {Array} watcherIds - Array of watcher user IDs
+ * @param {String} organizationId - Organization ID to validate against
+ * @returns {Promise<void>}
+ * @throws {Error} If validation fails
+ */
+async function validateWatchers(watcherIds, organizationId) {
+  if (!watcherIds || watcherIds.length === 0) return;
+
+  const watchers = await User.find({ _id: { $in: watcherIds } })
+    .withDeleted()
+    .lean();
+
+  if (watchers.length !== watcherIds.length) {
+    throw new Error("One or more watchers not found");
+  }
+
+  const invalidWatchers = watchers.filter(
+    (watcher) =>
+      watcher.isDeleted ||
+      watcher.organization.toString() !== organizationId.toString() ||
+      watcher.isHod !== true
+  );
+
+  if (invalidWatchers.length > 0) {
+    throw new Error(
+      "All watchers must be HODs (Head of Department) within your organization and not be deleted"
+    );
+  }
+}
+
+/**
+ * Validate Assignees Helper
+ * Reusable validation logic for assignees field
+ * Ensures assignees belong to the organization
+ * @param {Array} assigneeIds - Array of assignee user IDs
+ * @param {String} organizationId - Organization ID to validate against
+ * @returns {Promise<void>}
+ * @throws {Error} If validation fails
+ */
+async function validateAssignees(assigneeIds, organizationId) {
+  if (!assigneeIds || assigneeIds.length === 0) return;
+
+  const assignees = await User.find({ _id: { $in: assigneeIds } })
+    .withDeleted()
+    .lean();
+
+  if (assignees.length !== assigneeIds.length) {
+    throw new Error("One or more assignees not found");
+  }
+
+  const invalidAssignees = assignees.filter(
+    (assignee) =>
+      assignee.isDeleted ||
+      assignee.organization.toString() !== organizationId.toString()
+  );
+
+  if (invalidAssignees.length > 0) {
+    throw new Error(
+      "All assignees must belong to your organization and not be deleted"
+    );
+  }
+}
+
+/**
  * List Tasks Validator
  * Validates query parameters for listing tasks
  * Includes deleted parameter to include/exclude soft-deleted documents
@@ -38,9 +105,25 @@ import {
 export const listTasksValidator = [
   query("deleted")
     .optional()
-    .isBoolean()
-    .withMessage("Deleted must be a boolean value")
-    .toBoolean(),
+    .custom((value) => {
+      // Accept true, false, "true", "false", or "only"
+      if (
+        value === true ||
+        value === false ||
+        value === "true" ||
+        value === "false" ||
+        value === "only"
+      ) {
+        return true;
+      }
+      throw new Error('Deleted must be true, false, or "only"');
+    })
+    .customSanitizer((value) => {
+      // Convert string "true"/"false" to boolean, keep "only" as string
+      if (value === "true") return true;
+      if (value === "false") return false;
+      return value; // true, false, or "only"
+    }),
 
   query("page")
     .optional()
@@ -158,7 +241,19 @@ const commonTaskValidators = [
     .optional()
     .trim()
     .isIn(Object.values(TASK_PRIORITY))
-    .withMessage("Invalid task priority"),
+    .withMessage("Invalid task priority")
+    .custom((value, { req }) => {
+      // RoutineTask CANNOT have LOW priority
+      if (
+        req.body.taskType === TASK_TYPES.ROUTINE &&
+        value === TASK_PRIORITY.LOW
+      ) {
+        throw new Error(
+          "RoutineTask priority cannot be LOW. Must be MEDIUM, HIGH, or URGENT"
+        );
+      }
+      return true;
+    }),
 
   body("organization")
     .trim()
@@ -241,25 +336,8 @@ const commonTaskValidators = [
       return true;
     })
     .custom(async (value, { req }) => {
-      if (value.length === 0) return true;
-      // SCOPING: Check if all watchers exist and belong to req.user's organization (FIXED)
-      const watchers = await User.find({ _id: { $in: value } })
-        .withDeleted()
-        .lean();
-      if (watchers.length !== value.length) {
-        throw new Error("One or more watchers not found");
-      }
-      const invalidWatchers = watchers.filter(
-        (watcher) =>
-          watcher.isDeleted ||
-          watcher.organization.toString() !==
-            req.user.organization._id.toString()
-      );
-      if (invalidWatchers.length > 0) {
-        throw new Error(
-          "All watchers must belong to your organization and not be deleted"
-        );
-      }
+      // Use extracted helper function for watcher validation
+      await validateWatchers(value, req.user.organization._id);
       return true;
     }),
 
@@ -551,24 +629,8 @@ export const createAssignedTaskValidator = [
       return true;
     })
     .custom(async (value, { req }) => {
-      // SCOPING: Check if all assignees exist and belong to req.user's organization
-      const assignees = await User.find({ _id: { $in: value } })
-        .withDeleted()
-        .lean();
-      if (assignees.length !== value.length) {
-        throw new Error("One or more assignees not found");
-      }
-      const invalidAssignees = assignees.filter(
-        (assignee) =>
-          assignee.isDeleted ||
-          assignee.organization.toString() !==
-            req.user.organization._id.toString()
-      );
-      if (invalidAssignees.length > 0) {
-        throw new Error(
-          "All assignees must belong to your organization and not be deleted"
-        );
-      }
+      // Use extracted helper function for assignee validation
+      await validateAssignees(value, req.user.organization._id);
       return true;
     }),
 
@@ -643,7 +705,18 @@ export const updateTaskValidator = [
     .optional()
     .trim()
     .isIn(Object.values(TASK_PRIORITY))
-    .withMessage("Invalid task priority"),
+    .withMessage("Invalid task priority")
+    .custom(async (value, { req }) => {
+      // Get task to check taskType
+      const task = await Task.findById(req.params.taskId).withDeleted().lean();
+      // RoutineTask CANNOT have LOW priority
+      if (task.taskType === TASK_TYPES.ROUTINE && value === TASK_PRIORITY.LOW) {
+        throw new Error(
+          "RoutineTask priority cannot be LOW. Must be MEDIUM, HIGH, or URGENT"
+        );
+      }
+      return true;
+    }),
 
   body("watchers")
     .optional()
@@ -662,24 +735,9 @@ export const updateTaskValidator = [
       return true;
     })
     .custom(async (value, { req }) => {
-      if (value.length === 0) return true;
       const task = await Task.findById(req.params.taskId).withDeleted().lean();
-      const watchers = await User.find({ _id: { $in: value } })
-        .withDeleted()
-        .lean();
-      if (watchers.length !== value.length) {
-        throw new Error("One or more watchers not found");
-      }
-      const invalidWatchers = watchers.filter(
-        (watcher) =>
-          watcher.isDeleted ||
-          watcher.organization.toString() !== task.organization.toString()
-      );
-      if (invalidWatchers.length > 0) {
-        throw new Error(
-          "All watchers must belong to the same organization and not be deleted"
-        );
-      }
+      // Use extracted helper function for watcher validation
+      await validateWatchers(value, task.organization);
       return true;
     }),
 
@@ -759,22 +817,8 @@ export const updateTaskValidator = [
     })
     .custom(async (value, { req }) => {
       const task = await Task.findById(req.params.taskId).withDeleted().lean();
-      const assignees = await User.find({ _id: { $in: value } })
-        .withDeleted()
-        .lean();
-      if (assignees.length !== value.length) {
-        throw new Error("One or more assignees not found");
-      }
-      const invalidAssignees = assignees.filter(
-        (assignee) =>
-          assignee.isDeleted ||
-          assignee.organization.toString() !== task.organization.toString()
-      );
-      if (invalidAssignees.length > 0) {
-        throw new Error(
-          "All assignees must belong to the same organization and not be deleted"
-        );
-      }
+      // Use extracted helper function for assignee validation
+      await validateAssignees(value, task.organization);
       return true;
     }),
 
@@ -855,11 +899,74 @@ export const getTaskByIdValidator = [
     }),
 ];
 
+/**
+ * Create Task Validator (Dynamic)
+ * Validates task creation based on taskType
+ * Returns appropriate validator array based on task type
+ * This is a middleware function that dynamically selects the validator
+ */
+export const createTaskValidator = (req, res, next) => {
+  const { taskType } = req.body;
+
+  // Validate taskType exists
+  if (!taskType) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Task type is required",
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  // Validate taskType is valid
+  if (!Object.values(TASK_TYPES).includes(taskType)) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Invalid task type",
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  // Determine which validator to use based on task type
+  let validator;
+  switch (taskType) {
+    case TASK_TYPES.PROJECT:
+      validator = createProjectTaskValidator;
+      break;
+    case TASK_TYPES.ROUTINE:
+      validator = createRoutineTaskValidator;
+      break;
+    case TASK_TYPES.ASSIGNED:
+      validator = createAssignedTaskValidator;
+      break;
+    default:
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid task type",
+          timestamp: new Date().toISOString(),
+        },
+      });
+  }
+
+  // Apply the appropriate validator
+  Promise.all(validator.map((v) => v.run(req)))
+    .then(() => next())
+    .catch(next);
+};
+
 export default {
   listTasksValidator,
   createProjectTaskValidator,
   createRoutineTaskValidator,
   createAssignedTaskValidator,
+  createTaskValidator,
   updateTaskValidator,
   deleteTaskValidator,
   restoreTaskValidator,

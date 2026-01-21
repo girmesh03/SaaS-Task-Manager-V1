@@ -3,7 +3,6 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import compression from "compression";
-import rateLimit from "express-rate-limit";
 import cookieParser from "cookie-parser";
 import mongoSanitize from "express-mongo-sanitize";
 import morgan from "morgan";
@@ -20,7 +19,8 @@ import corsOptions from "./config/corsOptions.js";
 import errorHandler from "./errorHandler/ErrorController.js";
 import logger from "./utils/logger.js";
 import { generateRequestId } from "./utils/helpers.js";
-import { RATE_LIMIT, HTTP_STATUS, ERROR_CODES } from "./utils/constants.js";
+import { apiLimiter } from "./middlewares/rateLimiter.js";
+import { HTTP_STATUS, ERROR_CODES } from "./utils/constants.js";
 
 // Set timezone to UTC
 process.env.TZ = "UTC";
@@ -88,39 +88,6 @@ app.use(
   })
 );
 
-// Rate limiting for all /api routes
-const limiter = rateLimit({
-  windowMs: RATE_LIMIT.WINDOW_MS,
-  max: RATE_LIMIT.MAX_REQUESTS,
-  message: {
-    success: false,
-    error: {
-      code: ERROR_CODES.TOO_MANY_REQUESTS_ERROR,
-      message: "Too many requests from this IP, please try again later",
-      timestamp: new Date().toISOString(),
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res) => {
-    logger.warn(`Rate limit exceeded for IP: ${req.ip}`, {
-      ip: req.ip,
-      path: req.path,
-      method: req.method,
-    });
-    res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
-      success: false,
-      error: {
-        code: ERROR_CODES.TOO_MANY_REQUESTS_ERROR,
-        message: "Too many requests from this IP, please try again later",
-        timestamp: new Date().toISOString(),
-      },
-    });
-  },
-});
-
-app.use("/api", limiter);
-
 // Request logging middleware
 app.use((req, res, next) => {
   logger.info(`${req.method} ${req.path}`, {
@@ -173,18 +140,10 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// API routes will be added here
-import {
-  authRoutes,
-  organizationRoutes,
-  departmentRoutes,
-  userRoutes,
-} from "./routes/index.js";
+// API routes with rate limiting
+import apiRoutes from "./routes/index.js";
 
-app.use("/api/auth", authRoutes);
-app.use("/api/organizations", organizationRoutes);
-app.use("/api/departments", departmentRoutes);
-app.use("/api/users", userRoutes);
+app.use("/api", apiLimiter, apiRoutes);
 
 // 404 handler for undefined routes
 app.use((req, res) => {

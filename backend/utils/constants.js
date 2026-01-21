@@ -787,3 +787,44 @@ export default {
   INDUSTRIES,
   INDUSTRIES_SIZE,
 };
+
+/**
+ * Task Error Messages
+ * Consistent error messages for task operations
+ * @readonly
+ */
+export const TASK_ERROR_MESSAGES = {
+  NOT_FOUND: (id) => `Task with ID ${id} not found`,
+  ALREADY_DELETED: "Task is already deleted",
+  NOT_DELETED: "Task is not deleted",
+  CANNOT_UPDATE_DELETED: "Cannot update deleted task",
+  CANNOT_DELETE_DELETED: "Cannot delete deleted task",
+  ORGANIZATION_MISMATCH: "You can only create tasks in your own organization",
+  INVALID_TASK_TYPE: (type) => `Invalid task type: ${type}`,
+};
+
+/**
+ * Task Log Messages
+ * Consistent log messages for task operations
+ * @readonly
+ */
+export const TASK_LOG_MESSAGES = {
+  GET_ALL_REQUEST: "Get all tasks request",
+  GET_ALL_SUCCESS: "Tasks retrieved successfully",
+  GET_ALL_FAILED: "Get all tasks failed",
+  GET_BY_ID_REQUEST: "Get task by ID request",
+  GET_BY_ID_SUCCESS: "Task retrieved successfully",
+  GET_BY_ID_FAILED: "Get task by ID failed",
+  CREATE_REQUEST: "Create task request",
+  CREATE_SUCCESS: "Task created successfully",
+  CREATE_FAILED: "Create task failed",
+  UPDATE_REQUEST: "Update task request",
+  UPDATE_SUCCESS: "Task updated successfully",
+  UPDATE_FAILED: "Update task failed",
+  DELETE_REQUEST: "Delete task request",
+  DELETE_SUCCESS: "Task deleted successfully",
+  DELETE_FAILED: "Delete task failed",
+  RESTORE_REQUEST: "Restore task request",
+  RESTORE_SUCCESS: "Task restored successfully",
+  RESTORE_FAILED: "Restore task failed",
+};
