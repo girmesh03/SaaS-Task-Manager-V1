@@ -828,3 +828,43 @@ export const TASK_LOG_MESSAGES = {
   RESTORE_SUCCESS: "Task restored successfully",
   RESTORE_FAILED: "Restore task failed",
 };
+
+/**
+ * Activity Error Messages
+ * Consistent error messages for activity operations
+ * @readonly
+ */
+export const ACTIVITY_ERROR_MESSAGES = {
+  NOT_FOUND: (id) => `Activity with ID ${id} not found`,
+  ALREADY_DELETED: "Activity is already deleted",
+  NOT_DELETED: "Activity is not deleted",
+  CANNOT_UPDATE_DELETED: "Cannot update deleted activity",
+  ORGANIZATION_MISMATCH: "You can only create activities in your own organization",
+  ROUTINE_TASK_ACTIVITY: "TaskActivity cannot be created for RoutineTask",
+};
+
+/**
+ * Activity Log Messages
+ * Consistent log messages for activity operations
+ * @readonly
+ */
+export const ACTIVITY_LOG_MESSAGES = {
+  GET_ALL_REQUEST: "Get all activities request",
+  GET_ALL_SUCCESS: "Activities retrieved successfully",
+  GET_ALL_FAILED: "Get all activities failed",
+  GET_BY_ID_REQUEST: "Get activity by ID request",
+  GET_BY_ID_SUCCESS: "Activity retrieved successfully",
+  GET_BY_ID_FAILED: "Get activity by ID failed",
+  CREATE_REQUEST: "Create activity request",
+  CREATE_SUCCESS: "Activity created successfully",
+  CREATE_FAILED: "Create activity failed",
+  UPDATE_REQUEST: "Update activity request",
+  UPDATE_SUCCESS: "Activity updated successfully",
+  UPDATE_FAILED: "Update activity failed",
+  DELETE_REQUEST: "Delete activity request",
+  DELETE_SUCCESS: "Activity deleted successfully",
+  DELETE_FAILED: "Delete activity failed",
+  RESTORE_REQUEST: "Restore activity request",
+  RESTORE_SUCCESS: "Activity restored successfully",
+  RESTORE_FAILED: "Restore activity failed",
+};
