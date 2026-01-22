@@ -12,6 +12,7 @@ import {
   formatSuccessResponse,
   getPaginationOptions,
   safeAbortTransaction,
+  escapeRegex,
 } from "../utils/helpers.js";
 import {
   validateOrganizationScope,
@@ -26,6 +27,27 @@ import {
  * Handles task activity management operations: list, read, create, update, delete, restore
  *
  * Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7, 11.8, 11.9, 11.10, 11.11
+ */
+
+/**
+ * @typedef {Object} TaskActivityDocument
+ * @property {mongoose.Types.ObjectId} _id - Activity ID
+ * @property {mongoose.Types.ObjectId} task - Task reference
+ * @property {string} activityType - Type of activity
+ * @property {string} activity - Activity description
+ * @property {mongoose.Types.ObjectId} createdBy - User reference
+ * @property {mongoose.Types.ObjectId} organization - Organization reference
+ * @property {mongoose.Types.ObjectId} department - Department reference
+ * @property {Array<{material: mongoose.Types.ObjectId, quantity: number}>} materials - Materials used
+ * @property {Array<{url: string, name: string}>} attachments - Attachments
+ * @property {boolean} isDeleted - Soft delete flag
+ * @property {Date} deletedAt - Deletion timestamp
+ * @property {mongoose.Types.ObjectId} deletedBy - User who deleted
+ * @property {Date} createdAt - Creation timestamp
+ * @property {Date} updatedAt - Update timestamp
+ * @property {Function} save - Save document
+ * @property {Function} populate - Populate references
+ * @property {Function} toObject - Convert to plain object
  */
 
 /**
@@ -92,10 +114,8 @@ export const getAllTaskActivities = async (req, res, next) => {
       filter.department = userDepartment._id;
     }
 
-    // Task Filter
-    if (task) {
-      filter.task = task;
-    }
+    // Task Filter (Mandatory from URL)
+    filter.task = req.params.taskId;
 
     // Activity Type Filter
     if (activityType) {
@@ -109,7 +129,7 @@ export const getAllTaskActivities = async (req, res, next) => {
 
     // Search Filter (Description)
     if (search) {
-      filter.activity = { $regex: search, $options: "i" };
+      filter.activity = { $regex: escapeRegex(search), $options: "i" };
     }
 
     // Get pagination options
@@ -200,16 +220,16 @@ export const getAllTaskActivities = async (req, res, next) => {
  */
 export const getTaskActivityById = async (req, res, next) => {
   try {
-    const { taskActivityId } = req.params;
+    const { activityId } = req.params;
 
     logger.info(ACTIVITY_LOG_MESSAGES.GET_BY_ID_REQUEST, {
       userId: req.user.userId,
-      taskActivityId,
+      activityId,
       role: req.user.role,
     });
 
     // Find activity (including soft-deleted) using helper
-    const activity = await findResourceById(TaskActivity, taskActivityId, {
+    const activity = await findResourceById(TaskActivity, activityId, {
       includeDeleted: true,
       resourceType: "TaskActivity",
     });
@@ -265,7 +285,7 @@ export const getTaskActivityById = async (req, res, next) => {
       error: error.message,
       stack: error.stack,
       userId: req.user?.userId,
-      taskActivityId: req.params.taskActivityId,
+      activityId: req.params.activityId,
     });
     next(error);
   }
@@ -287,14 +307,15 @@ export const createTaskActivity = async (req, res, next) => {
   session.startTransaction();
 
   try {
+    const { taskId } = req.params;
     const { organization: userOrganization, userId } = req.user;
-    const activityData = req.validated.body;
+    const activityData = { ...req.validated.body, task: taskId };
 
     logger.info(ACTIVITY_LOG_MESSAGES.CREATE_REQUEST, {
       userId,
       role: req.user.role,
       activityType: activityData.activityType,
-      taskId: activityData.task,
+      taskId: taskId,
     });
 
     // Validate organization scope
@@ -379,18 +400,18 @@ export const updateTaskActivity = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { taskActivityId } = req.params;
+    const { activityId } = req.params;
     const updateData = req.validated.body;
 
     logger.info(ACTIVITY_LOG_MESSAGES.UPDATE_REQUEST, {
       userId: req.user.userId,
-      taskActivityId,
+      activityId,
       role: req.user.role,
       updateFields: Object.keys(updateData),
     });
 
     // Find activity with session
-    const activity = await findResourceById(TaskActivity, taskActivityId, {
+    const activity = await findResourceById(TaskActivity, activityId, {
       session,
       resourceType: "TaskActivity",
     });
@@ -467,7 +488,7 @@ export const updateTaskActivity = async (req, res, next) => {
       error: error.message,
       stack: error.stack,
       userId: req.user?.userId,
-      taskActivityId: req.params.taskActivityId,
+      activityId: req.params.activityId,
     });
     next(error);
   } finally {
@@ -490,17 +511,17 @@ export const deleteTaskActivity = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { taskActivityId } = req.params;
+    const { activityId } = req.params;
     const { userId } = req.user;
 
     logger.info(ACTIVITY_LOG_MESSAGES.DELETE_REQUEST, {
       userId,
-      taskActivityId,
+      activityId,
       role: req.user.role,
     });
 
     // Find activity
-    const activity = await findResourceById(TaskActivity, taskActivityId, {
+    const activity = await findResourceById(TaskActivity, activityId, {
       session,
       resourceType: "TaskActivity",
     });
@@ -519,7 +540,7 @@ export const deleteTaskActivity = async (req, res, next) => {
 
     // Perform cascade delete with validation
     const cascadeResult = await TaskActivity.cascadeDelete(
-      taskActivityId,
+      activityId,
       userId,
       session,
       {
@@ -542,7 +563,7 @@ export const deleteTaskActivity = async (req, res, next) => {
 
     logger.info(ACTIVITY_LOG_MESSAGES.DELETE_SUCCESS, {
       userId,
-      taskActivityId,
+      activityId,
       deletedCount: cascadeResult.deletedCount,
       warnings: cascadeResult.warnings,
       operationType: "CASCADE_DELETE",
@@ -555,7 +576,7 @@ export const deleteTaskActivity = async (req, res, next) => {
     return res.status(HTTP_STATUS.OK).json(
       formatSuccessResponse(
         {
-          taskActivityId,
+          activityId,
           deletedCount: cascadeResult.deletedCount,
           warnings: cascadeResult.warnings,
         },
@@ -570,7 +591,7 @@ export const deleteTaskActivity = async (req, res, next) => {
       error: error.message,
       stack: error.stack,
       userId: req.user?.userId,
-      taskActivityId: req.params.taskActivityId,
+      activityId: req.params.activityId,
     });
     next(error);
   } finally {
@@ -593,17 +614,17 @@ export const restoreTaskActivity = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { taskActivityId } = req.params;
+    const { activityId } = req.params;
     const { userId } = req.user;
 
     logger.info(ACTIVITY_LOG_MESSAGES.RESTORE_REQUEST, {
       userId,
-      taskActivityId,
+      activityId,
       role: req.user.role,
     });
 
     // Find activity (including soft-deleted)
-    const activity = await findResourceById(TaskActivity, taskActivityId, {
+    const activity = await findResourceById(TaskActivity, activityId, {
       includeDeleted: true,
       session,
       resourceType: "TaskActivity",
@@ -617,7 +638,7 @@ export const restoreTaskActivity = async (req, res, next) => {
 
     // Perform cascade restore with validation
     const cascadeResult = await TaskActivity.cascadeRestore(
-      taskActivityId,
+      activityId,
       session,
       {
         skipValidation: false,
@@ -639,7 +660,7 @@ export const restoreTaskActivity = async (req, res, next) => {
 
     logger.info(ACTIVITY_LOG_MESSAGES.RESTORE_SUCCESS, {
       userId,
-      taskActivityId,
+      activityId,
       restoredCount: cascadeResult.restoredCount,
       warnings: cascadeResult.warnings,
       operationType: "CASCADE_RESTORE",
@@ -652,7 +673,7 @@ export const restoreTaskActivity = async (req, res, next) => {
     return res.status(HTTP_STATUS.OK).json(
       formatSuccessResponse(
         {
-          taskActivityId,
+          activityId,
           restoredCount: cascadeResult.restoredCount,
           warnings: cascadeResult.warnings,
         },
@@ -667,7 +688,7 @@ export const restoreTaskActivity = async (req, res, next) => {
       error: error.message,
       stack: error.stack,
       userId: req.user?.userId,
-      taskActivityId: req.params.taskActivityId,
+      activityId: req.params.activityId,
     });
     next(error);
   } finally {

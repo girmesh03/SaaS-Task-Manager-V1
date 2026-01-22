@@ -9,7 +9,6 @@ import organizationRoutes from "./organizationRoutes.js";
 import departmentRoutes from "./departmentRoutes.js";
 import userRoutes from "./userRoutes.js";
 import taskRoutes from "./taskRoutes.js";
-import taskActivityRoutes from "./taskActivityRoutes.js";
 
 const router = express.Router();
 
@@ -19,6 +18,5 @@ router.use("/organizations", organizationRoutes);
 router.use("/departments", departmentRoutes);
 router.use("/users", userRoutes);
 router.use("/tasks", taskRoutes);
-router.use("/task-activities", taskActivityRoutes);
 
 export default router;

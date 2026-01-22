@@ -1,6 +1,13 @@
 import express from "express";
-import * as activityController from "../controllers/taskActivityController.js";
-import { authenticate } from "../middlewares/authMiddleware.js";
+import {
+  getAllTaskActivities,
+  createTaskActivity,
+  getTaskActivityById,
+  updateTaskActivity,
+  deleteTaskActivity,
+  restoreTaskActivity,
+} from "../controllers/taskActivityController.js";
+import authMiddleware from "../middlewares/authMiddleware.js";
 import { authorize } from "../middlewares/authorization.js";
 import {
   listTaskActivitiesValidator,
@@ -10,7 +17,9 @@ import {
   restoreTaskActivityValidator,
   getTaskActivityByIdValidator,
 } from "../middlewares/validators/taskActivityValidators.js";
-import { runValidation } from "../middlewares/validators/index.js";
+import { validate } from "../middlewares/validation.js";
+import { findResourceById } from "../utils/controllerHelpers.js";
+import { TaskActivity } from "../models/index.js";
 
 /**
  * TaskActivity Routes
@@ -20,92 +29,114 @@ import { runValidation } from "../middlewares/validators/index.js";
  * Requirements: 11.1 - 11.11
  */
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 // Apply authentication to all routes
-router.use(authenticate);
+router.use(authMiddleware);
 
 /**
- * @route GET /api/task-activities
- * @desc Get all task activities with pagination and filtering
- * @access Private (SuperAdmin, Admin, Manager, User)
+ * Helper function to get task activity document from request
+ * Used by authorization middleware to check ownership and scope
+ * @param {import('express').Request} req - Express request object
+ * @returns {Promise<Object|null>} TaskActivity document or null
  */
+const getTaskActivityDocument = async (req) => {
+  const { activityId } = req.params;
+  if (!activityId) return null;
+
+  return findResourceById(TaskActivity, activityId, {
+    includeDeleted: true,
+  });
+};
+
 /**
- * @route GET /api/task-activities
- * @desc Get all task activities with pagination and filtering
+ * @route GET /api/tasks/:taskId/activities
+ * @desc Get all task activities for a specific task with pagination and filtering
  * @access Private (SuperAdmin, Admin, Manager, User)
  */
 router.get(
   "/",
-  authorize("TaskActivity", "read"),
+  authorize("activities", "read"),
   listTaskActivitiesValidator,
-  runValidation,
-  activityController.getAllTaskActivities
+  validate,
+  getAllTaskActivities
 );
 
 /**
- * @route POST /api/task-activities
- * @desc Create new task activity
+ * @route POST /api/tasks/:taskId/activities
+ * @desc Create new task activity for a specific task
  * @access Private (SuperAdmin, Admin, Manager, User)
  */
 router.post(
   "/",
-  authorize("TaskActivity", "create"),
+  authorize("activities", "create"),
   createTaskActivityValidator,
-  runValidation,
-  activityController.createTaskActivity
+  validate,
+  createTaskActivity
 );
 
 /**
- * @route GET /api/task-activities/:taskActivityId
+ * @route GET /api/tasks/:taskId/activities/:activityId
  * @desc Get task activity by ID
  * @access Private (SuperAdmin, Admin, Manager, User)
  */
 router.get(
-  "/:taskActivityId",
-  authorize("TaskActivity", "read"),
+  "/:activityId",
+  authorize("activities", "read", {
+    checkScope: true,
+    getDocument: getTaskActivityDocument,
+  }),
   getTaskActivityByIdValidator,
-  runValidation,
-  activityController.getTaskActivityById
+  validate,
+  getTaskActivityById
 );
 
 /**
- * @route PUT /api/task-activities/:taskActivityId
+ * @route PUT /api/tasks/:taskId/activities/:activityId
  * @desc Update task activity
  * @access Private (SuperAdmin, Admin, Manager, User)
  */
 router.put(
-  "/:taskActivityId",
-  authorize("TaskActivity", "update"),
+  "/:activityId",
+  authorize("activities", "update", {
+    checkScope: true,
+    getDocument: getTaskActivityDocument,
+  }),
   updateTaskActivityValidator,
-  runValidation,
-  activityController.updateTaskActivity
+  validate,
+  updateTaskActivity
 );
 
 /**
- * @route DELETE /api/task-activities/:taskActivityId
+ * @route DELETE /api/tasks/:taskId/activities/:activityId
  * @desc Soft delete task activity
  * @access Private (SuperAdmin, Admin, Manager)
  */
 router.delete(
-  "/:taskActivityId",
-  authorize("TaskActivity", "delete"),
+  "/:activityId",
+  authorize("activities", "delete", {
+    checkScope: true,
+    getDocument: getTaskActivityDocument,
+  }),
   deleteTaskActivityValidator,
-  runValidation,
-  activityController.deleteTaskActivity
+  validate,
+  deleteTaskActivity
 );
 
 /**
- * @route PUT /api/task-activities/:taskActivityId/restore
+ * @route PUT /api/tasks/:taskId/activities/:activityId/restore
  * @desc Restore soft-deleted task activity
  * @access Private (SuperAdmin, Admin, Manager)
  */
 router.put(
-  "/:taskActivityId/restore",
-  authorize("TaskActivity", "restore"),
+  "/:activityId/restore",
+  authorize("activities", "restore", {
+    checkScope: true,
+    getDocument: getTaskActivityDocument,
+  }),
   restoreTaskActivityValidator,
-  runValidation,
-  activityController.restoreTaskActivity
+  validate,
+  restoreTaskActivity
 );
 
 export default router;

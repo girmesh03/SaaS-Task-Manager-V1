@@ -89,9 +89,10 @@ export const listTaskActivitiesValidator = [
     .isIn(Object.values(ACTIVITY_TYPES))
     .withMessage("Invalid activity type filter"),
 
-  query("task")
-    .optional()
+  param("taskId")
     .trim()
+    .notEmpty()
+    .withMessage("Task ID is required")
     .matches(COMMON_VALIDATION.MONGODB_OBJECTID.PATTERN)
     .withMessage("Invalid task ID format"),
 
@@ -118,10 +119,10 @@ export const listTaskActivitiesValidator = [
  * Create TaskActivity Validator
  */
 export const createTaskActivityValidator = [
-  body("task")
+  param("taskId")
     .trim()
     .notEmpty()
-    .withMessage("Task is required")
+    .withMessage("Task ID is required")
     .matches(COMMON_VALIDATION.MONGODB_OBJECTID.PATTERN)
     .withMessage("Invalid task ID format")
     .custom(async (value) => {
@@ -136,6 +137,10 @@ export const createTaskActivityValidator = [
       // Reject creation for RoutineTask
       if (task.taskType === TASK_TYPES.ROUTINE) {
         throw new Error("TaskActivity cannot be created for RoutineTask");
+      }
+      // SCOPING: Task must belong to req.user's organization
+      if (task.organization.toString() !== req.user.organization._id.toString()) {
+        throw new Error("Task must belong to your organization");
       }
       return true;
     }),
@@ -299,7 +304,7 @@ export const createTaskActivityValidator = [
  * Update TaskActivity Validator
  */
 export const updateTaskActivityValidator = [
-  param("taskActivityId")
+  param("activityId")
     .trim()
     .notEmpty()
     .withMessage("Activity ID is required")
@@ -366,7 +371,7 @@ export const updateTaskActivityValidator = [
     })
     .custom(async (value, { req }) => {
       if (!value || value.length === 0) return true;
-      const activity = await TaskActivity.findById(req.params.taskActivityId)
+      const activity = await TaskActivity.findById(req.params.activityId)
         .withDeleted()
         .lean();
       const materialIds = value.map((m) => m.material);
@@ -409,7 +414,7 @@ export const updateTaskActivityValidator = [
  * Delete TaskActivity Validator
  */
 export const deleteTaskActivityValidator = [
-  param("taskActivityId")
+  param("activityId")
     .trim()
     .notEmpty()
     .withMessage("Activity ID is required")
@@ -431,7 +436,7 @@ export const deleteTaskActivityValidator = [
  * Restore TaskActivity Validator
  */
 export const restoreTaskActivityValidator = [
-  param("taskActivityId")
+  param("activityId")
     .trim()
     .notEmpty()
     .withMessage("Activity ID is required")
@@ -465,7 +470,7 @@ export const restoreTaskActivityValidator = [
  * Get TaskActivity By ID Validator
  */
 export const getTaskActivityByIdValidator = [
-  param("taskActivityId")
+  param("activityId")
     .trim()
     .notEmpty()
     .withMessage("Activity ID is required")

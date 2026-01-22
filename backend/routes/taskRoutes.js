@@ -8,6 +8,14 @@ import {
   restoreTask,
 } from "../controllers/taskController.js";
 import {
+  getAllTaskActivities,
+  createTaskActivity,
+  getTaskActivityById,
+  updateTaskActivity,
+  deleteTaskActivity,
+  restoreTaskActivity,
+} from "../controllers/taskActivityController.js";
+import {
   listTasksValidator,
   createTaskValidator,
   updateTaskValidator,
@@ -15,26 +23,39 @@ import {
   restoreTaskValidator,
   getTaskByIdValidator,
 } from "../middlewares/validators/taskValidators.js";
+import {
+  listTaskActivitiesValidator,
+  createTaskActivityValidator,
+  updateTaskActivityValidator,
+  deleteTaskActivityValidator,
+  restoreTaskActivityValidator,
+  getTaskActivityByIdValidator,
+} from "../middlewares/validators/taskActivityValidators.js";
 import { validate } from "../middlewares/validation.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
 import { authorize } from "../middlewares/authorization.js";
-import { Task } from "../models/index.js";
+import { Task, TaskActivity } from "../models/index.js";
+import { findResourceById } from "../utils/controllerHelpers.js";
 
 /**
  * Task Routes
  * Defines routes for task management operations (all task types)
- * Applies authentication, validation, and authorization middleware in correct order
+ * Defines routes for task activity management (nested under tasks)
+ * Applies authentication, authorization, and validation middleware in correct order
  *
- * MIDDLEWARE ORDER (Requirement 39.3):
+ * MIDDLEWARE ORDER (Requirement 39.3 & User Request):
  * 1. Authentication (authMiddleware) - Verify JWT token
- * 2. Validation (validators + validate) - Validate request data
- * 3. Authorization (authorize) - Check permissions
+ * 2. Authorization (authorize) - Check permissions
+ * 3. Validation (validators + validate) - Validate request data
  * 4. Controller - Execute business logic
  *
- * Requirements: 39.1, 39.2, 39.3, 39.5
+ * Requirements: 39.1, 39.2, 39.3, 39.5, 11.1 - 11.11
  */
 
 const router = express.Router();
+
+// Apply authentication to all routes (Requirement 39.1)
+router.use(authMiddleware);
 
 /**
  * Helper function to get task document from request
@@ -51,20 +72,34 @@ const getTaskDocument = async (req) => {
 };
 
 /**
+ * Helper function to get task activity document from request
+ * Used by authorization middleware to check ownership and scope
+ * @param {import('express').Request} req - Express request object
+ * @returns {Promise<Object|null>} TaskActivity document or null
+ */
+const getTaskActivityDocument = async (req) => {
+  const { activityId } = req.params;
+  if (!activityId) return null;
+
+  return findResourceById(TaskActivity, activityId, {
+    includeDeleted: true,
+  });
+};
+
+/**
+ * TASK MANAGEMENT ROUTES
+ */
+
+/**
  * @route   GET /api/tasks
  * @desc    Get all tasks with pagination and filtering
  * @access  Private (SuperAdmin, Admin, Manager, User)
- * @middleware authMiddleware - Verify JWT token (Requirement 39.1)
- * @middleware listTasksValidator - Validate query parameters
- * @middleware validate - Process validation results
- * @middleware authorize - Check permissions (Requirement 39.2)
  */
 router.get(
   "/",
-  authMiddleware,
+  authorize("tasks", "read"),
   listTasksValidator,
   validate,
-  authorize("tasks", "read"),
   getAllTasks
 );
 
@@ -72,20 +107,15 @@ router.get(
  * @route   GET /api/tasks/:taskId
  * @desc    Get task by ID
  * @access  Private (SuperAdmin, Admin, Manager, User)
- * @middleware authMiddleware - Verify JWT token (Requirement 39.1)
- * @middleware getTaskByIdValidator - Validate task ID
- * @middleware validate - Process validation results
- * @middleware authorize - Check permissions (Requirement 39.2)
  */
 router.get(
   "/:taskId",
-  authMiddleware,
-  getTaskByIdValidator,
-  validate,
   authorize("tasks", "read", {
     checkScope: true,
     getDocument: getTaskDocument,
   }),
+  getTaskByIdValidator,
+  validate,
   getTaskById
 );
 
@@ -93,17 +123,12 @@ router.get(
  * @route   POST /api/tasks
  * @desc    Create new task (all task types)
  * @access  Private (SuperAdmin, Admin, Manager, User)
- * @middleware authMiddleware - Verify JWT token (Requirement 39.1)
- * @middleware createTaskValidator - Validate task data based on task type
- * @middleware validate - Process validation results
- * @middleware authorize - Check permissions (Requirement 39.2)
  */
 router.post(
   "/",
-  authMiddleware,
+  authorize("tasks", "create"),
   createTaskValidator,
   validate,
-  authorize("tasks", "create"),
   createTask
 );
 
@@ -111,20 +136,15 @@ router.post(
  * @route   PUT /api/tasks/:taskId
  * @desc    Update task (all task types)
  * @access  Private (SuperAdmin, Admin, Manager, User - own tasks)
- * @middleware authMiddleware - Verify JWT token (Requirement 39.1)
- * @middleware updateTaskValidator - Validate update data
- * @middleware validate - Process validation results
- * @middleware authorize - Check permissions (Requirement 39.2)
  */
 router.put(
   "/:taskId",
-  authMiddleware,
-  updateTaskValidator,
-  validate,
   authorize("tasks", "update", {
     checkScope: true,
     getDocument: getTaskDocument,
   }),
+  updateTaskValidator,
+  validate,
   updateTask
 );
 
@@ -132,20 +152,15 @@ router.put(
  * @route   DELETE /api/tasks/:taskId
  * @desc    Soft delete task with cascade operations
  * @access  Private (SuperAdmin, Admin, Manager)
- * @middleware authMiddleware - Verify JWT token (Requirement 39.1)
- * @middleware deleteTaskValidator - Validate task ID
- * @middleware validate - Process validation results
- * @middleware authorize - Check permissions (Requirement 39.2)
  */
 router.delete(
   "/:taskId",
-  authMiddleware,
-  deleteTaskValidator,
-  validate,
   authorize("tasks", "delete", {
     checkScope: true,
     getDocument: getTaskDocument,
   }),
+  deleteTaskValidator,
+  validate,
   deleteTask
 );
 
@@ -153,21 +168,111 @@ router.delete(
  * @route   PUT /api/tasks/:taskId/restore
  * @desc    Restore soft-deleted task with cascade operations
  * @access  Private (SuperAdmin, Admin, Manager)
- * @middleware authMiddleware - Verify JWT token (Requirement 39.1)
- * @middleware restoreTaskValidator - Validate task ID
- * @middleware validate - Process validation results
- * @middleware authorize - Check permissions (Requirement 39.2)
  */
 router.put(
   "/:taskId/restore",
-  authMiddleware,
-  restoreTaskValidator,
-  validate,
   authorize("tasks", "restore", {
     checkScope: true,
     getDocument: getTaskDocument,
   }),
+  restoreTaskValidator,
+  validate,
   restoreTask
+);
+
+/**
+ * TASK ACTIVITY ROUTES
+ * Nested under /api/tasks/:taskId/activities
+ */
+
+/**
+ * @route GET /api/tasks/:taskId/activities
+ * @desc Get all task activities for a specific task with pagination and filtering
+ * @access Private (SuperAdmin, Admin, Manager, User)
+ */
+router.get(
+  "/:taskId/activities",
+  authorize("activities", "read"),
+  listTaskActivitiesValidator,
+  validate,
+  getAllTaskActivities
+);
+
+/**
+ * @route POST /api/tasks/:taskId/activities
+ * @desc Create new task activity for a specific task
+ * @access Private (SuperAdmin, Admin, Manager, User)
+ */
+router.post(
+  "/:taskId/activities",
+  authorize("activities", "create"),
+  createTaskActivityValidator,
+  validate,
+  createTaskActivity
+);
+
+/**
+ * @route GET /api/tasks/:taskId/activities/:activityId
+ * @desc Get task activity by ID
+ * @access Private (SuperAdmin, Admin, Manager, User)
+ */
+router.get(
+  "/:taskId/activities/:activityId",
+  authorize("activities", "read", {
+    checkScope: true,
+    getDocument: getTaskActivityDocument,
+  }),
+  getTaskActivityByIdValidator,
+  validate,
+  getTaskActivityById
+);
+
+/**
+ * @route PUT /api/tasks/:taskId/activities/:activityId
+ * @desc Update task activity
+ * @access Private (SuperAdmin, Admin, Manager, User)
+ */
+router.put(
+  "/:taskId/activities/:activityId",
+  authorize("activities", "update", {
+    checkScope: true,
+    getDocument: getTaskActivityDocument,
+  }),
+  updateTaskActivityValidator,
+  validate,
+  updateTaskActivity
+);
+
+/**
+ * @route DELETE /api/tasks/:taskId/activities/:activityId
+ * @desc Soft delete task activity
+ * @access Private (SuperAdmin, Admin, Manager)
+ */
+router.delete(
+  "/:taskId/activities/:activityId",
+  authorize("activities", "delete", {
+    checkScope: true,
+    getDocument: getTaskActivityDocument,
+  }),
+  deleteTaskActivityValidator,
+  validate,
+  deleteTaskActivity
+);
+
+/**
+ * @route PUT /api/tasks/:taskId/activities/:activityId/restore
+ * @desc Restore soft-deleted task activity
+ * @access Private (SuperAdmin, Admin, Manager)
+ */
+router.put(
+  "/:taskId/activities/:activityId/restore",
+  authorize("activities", "restore", {
+    checkScope: true,
+    getDocument: getTaskActivityDocument,
+  }),
+  restoreTaskActivityValidator,
+  validate,
+  restoreTaskActivity
 );
 
 export default router;
