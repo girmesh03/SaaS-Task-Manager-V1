@@ -16,6 +16,14 @@ import {
   restoreTaskActivity,
 } from "../controllers/taskActivityController.js";
 import {
+  getAllTaskComments,
+  getTaskCommentById,
+  createTaskComment,
+  updateTaskComment,
+  deleteTaskComment,
+  restoreTaskComment,
+} from "../controllers/taskCommentController.js";
+import {
   listTasksValidator,
   createTaskValidator,
   updateTaskValidator,
@@ -31,10 +39,18 @@ import {
   restoreTaskActivityValidator,
   getTaskActivityByIdValidator,
 } from "../middlewares/validators/taskActivityValidators.js";
+import {
+  listTaskCommentsValidator,
+  createTaskCommentValidator,
+  updateTaskCommentValidator,
+  deleteTaskCommentValidator,
+  restoreTaskCommentValidator,
+  getTaskCommentByIdValidator,
+} from "../middlewares/validators/taskCommentValidators.js";
 import { validate } from "../middlewares/validation.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
 import { authorize } from "../middlewares/authorization.js";
-import { Task, TaskActivity } from "../models/index.js";
+import { Task, TaskActivity, TaskComment } from "../models/index.js";
 import { findResourceById } from "../utils/controllerHelpers.js";
 
 /**
@@ -82,6 +98,21 @@ const getTaskActivityDocument = async (req) => {
   if (!activityId) return null;
 
   return findResourceById(TaskActivity, activityId, {
+    includeDeleted: true,
+  });
+};
+
+/**
+ * Helper function to get task comment document from request
+ * Used by authorization middleware to check ownership and scope
+ * @param {import('express').Request} req - Express request object
+ * @returns {Promise<Object|null>} TaskComment document or null
+ */
+const getTaskCommentDocument = async (req) => {
+  const { taskCommentId } = req.params;
+  if (!taskCommentId) return null;
+
+  return findResourceById(TaskComment, taskCommentId, {
     includeDeleted: true,
   });
 };
@@ -273,6 +304,101 @@ router.put(
   restoreTaskActivityValidator,
   validate,
   restoreTaskActivity
+);
+
+/**
+ * TASK COMMENT ROUTES
+ * Nested under /api/tasks/comments and /api/tasks/:taskId/comments
+ */
+
+/**
+ * @route GET /api/tasks/comments
+ * @desc Get all task comments with pagination and filtering
+ * @access Private (SuperAdmin, Admin, Manager, User)
+ */
+router.get(
+  "/comments",
+  authorize("comments", "read"),
+  listTaskCommentsValidator,
+  validate,
+  getAllTaskComments
+);
+
+/**
+ * @route POST /api/tasks/comments
+ * @desc Create new task comment
+ * @access Private (SuperAdmin, Admin, Manager, User)
+ */
+router.post(
+  "/comments",
+  authorize("comments", "create"),
+  createTaskCommentValidator,
+  validate,
+  createTaskComment
+);
+
+/**
+ * @route GET /api/tasks/:taskId/comments/:taskCommentId
+ * @desc Get task comment by ID
+ * @access Private (SuperAdmin, Admin, Manager, User)
+ */
+router.get(
+  "/:taskId/comments/:taskCommentId",
+  authorize("comments", "read", {
+    checkScope: true,
+    getDocument: getTaskCommentDocument,
+  }),
+  getTaskCommentByIdValidator,
+  validate,
+  getTaskCommentById
+);
+
+/**
+ * @route PUT /api/tasks/:taskId/comments/:taskCommentId
+ * @desc Update task comment
+ * @access Private (SuperAdmin, Admin, Manager, User - own comments)
+ */
+router.put(
+  "/:taskId/comments/:taskCommentId",
+  authorize("comments", "update", {
+    checkScope: true,
+    getDocument: getTaskCommentDocument,
+  }),
+  updateTaskCommentValidator,
+  validate,
+  updateTaskComment
+);
+
+/**
+ * @route DELETE /api/tasks/:taskId/comments/:taskCommentId
+ * @desc Soft delete task comment with cascade operations
+ * @access Private (SuperAdmin, Admin, Manager)
+ */
+router.delete(
+  "/:taskId/comments/:taskCommentId",
+  authorize("comments", "delete", {
+    checkScope: true,
+    getDocument: getTaskCommentDocument,
+  }),
+  deleteTaskCommentValidator,
+  validate,
+  deleteTaskComment
+);
+
+/**
+ * @route PUT /api/tasks/:taskId/comments/:taskCommentId/restore
+ * @desc Restore soft-deleted task comment with cascade operations
+ * @access Private (SuperAdmin, Admin, Manager)
+ */
+router.put(
+  "/:taskId/comments/:taskCommentId/restore",
+  authorize("comments", "restore", {
+    checkScope: true,
+    getDocument: getTaskCommentDocument,
+  }),
+  restoreTaskCommentValidator,
+  validate,
+  restoreTaskComment
 );
 
 export default router;

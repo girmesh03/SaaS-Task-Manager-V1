@@ -229,16 +229,16 @@ export const getAllTaskComments = async (req, res, next) => {
  */
 export const getTaskCommentById = async (req, res, next) => {
   try {
-    const { commentId } = req.params;
+    const { taskCommentId } = req.params;
 
     logger.info(COMMENT_LOG_MESSAGES.GET_BY_ID_REQUEST, {
       userId: req.user.userId,
-      commentId,
+      commentId: taskCommentId,
       role: req.user.role,
     });
 
     // Find comment (including soft-deleted) using helper
-    const comment = await findResourceById(TaskComment, commentId, {
+    const comment = await findResourceById(TaskComment, taskCommentId, {
       includeDeleted: true,
       resourceType: "TaskComment",
     });
@@ -294,7 +294,7 @@ export const getTaskCommentById = async (req, res, next) => {
       error: error.message,
       stack: error.stack,
       userId: req.user?.userId,
-      commentId: req.params.commentId,
+      commentId: req.params.taskCommentId,
     });
     next(error);
   }
@@ -407,18 +407,18 @@ export const updateTaskComment = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { commentId } = req.params;
+    const { taskCommentId } = req.params;
     const updateData = req.validated.body;
 
     logger.info(COMMENT_LOG_MESSAGES.UPDATE_REQUEST, {
       userId: req.user.userId,
-      commentId,
+      commentId: taskCommentId,
       role: req.user.role,
       updateFields: Object.keys(updateData),
     });
 
     // Find comment with session
-    const comment = await findResourceById(TaskComment, commentId, {
+    const comment = await findResourceById(TaskComment, taskCommentId, {
       session,
       resourceType: "TaskComment",
     });
@@ -497,7 +497,7 @@ export const updateTaskComment = async (req, res, next) => {
       error: error.message,
       stack: error.stack,
       userId: req.user?.userId,
-      commentId: req.params.commentId,
+      commentId: req.params.taskCommentId,
     });
     next(error);
   } finally {
@@ -521,17 +521,17 @@ export const deleteTaskComment = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { commentId } = req.params;
+    const { taskCommentId } = req.params;
     const { userId } = req.user;
 
     logger.info(COMMENT_LOG_MESSAGES.DELETE_REQUEST, {
       userId,
-      commentId,
+      commentId: taskCommentId,
       role: req.user.role,
     });
 
     // Find comment
-    const comment = await findResourceById(TaskComment, commentId, {
+    const comment = await findResourceById(TaskComment, taskCommentId, {
       session,
       resourceType: "TaskComment",
     });
@@ -550,7 +550,7 @@ export const deleteTaskComment = async (req, res, next) => {
 
     // Perform cascade delete with validation
     const cascadeResult = await TaskComment.cascadeDelete(
-      commentId,
+      taskCommentId,
       userId,
       session,
       {
@@ -573,7 +573,7 @@ export const deleteTaskComment = async (req, res, next) => {
 
     logger.info(COMMENT_LOG_MESSAGES.DELETE_SUCCESS, {
       userId,
-      commentId,
+      commentId: taskCommentId,
       deletedCount: cascadeResult.deletedCount,
       warnings: cascadeResult.warnings,
       operationType: "CASCADE_DELETE",
@@ -586,7 +586,7 @@ export const deleteTaskComment = async (req, res, next) => {
     return res.status(HTTP_STATUS.OK).json(
       formatSuccessResponse(
         {
-          commentId,
+          commentId: taskCommentId,
           deletedCount: cascadeResult.deletedCount,
           warnings: cascadeResult.warnings,
         },
@@ -601,7 +601,7 @@ export const deleteTaskComment = async (req, res, next) => {
       error: error.message,
       stack: error.stack,
       userId: req.user?.userId,
-      commentId: req.params.commentId,
+      commentId: req.params.taskCommentId,
     });
     next(error);
   } finally {
@@ -625,17 +625,17 @@ export const restoreTaskComment = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { commentId } = req.params;
+    const { taskCommentId } = req.params;
     const { userId } = req.user;
 
     logger.info(COMMENT_LOG_MESSAGES.RESTORE_REQUEST, {
       userId,
-      commentId,
+      commentId: taskCommentId,
       role: req.user.role,
     });
 
     // Find comment (including soft-deleted)
-    const comment = await findResourceById(TaskComment, commentId, {
+    const comment = await findResourceById(TaskComment, taskCommentId, {
       includeDeleted: true,
       session,
       resourceType: "TaskComment",
@@ -648,10 +648,14 @@ export const restoreTaskComment = async (req, res, next) => {
     validateOrganizationScope(comment, req.user, "restore", "comment");
 
     // Perform cascade restore with validation
-    const cascadeResult = await TaskComment.cascadeRestore(commentId, session, {
-      skipValidation: false,
-      validateParents: true,
-    });
+    const cascadeResult = await TaskComment.cascadeRestore(
+      taskCommentId,
+      session,
+      {
+        skipValidation: false,
+        validateParents: true,
+      }
+    );
 
     // Handle cascade result
     handleCascadeResult(
@@ -667,7 +671,7 @@ export const restoreTaskComment = async (req, res, next) => {
 
     logger.info(COMMENT_LOG_MESSAGES.RESTORE_SUCCESS, {
       userId,
-      commentId,
+      commentId: taskCommentId,
       restoredCount: cascadeResult.restoredCount,
       warnings: cascadeResult.warnings,
       operationType: "CASCADE_RESTORE",
@@ -680,7 +684,7 @@ export const restoreTaskComment = async (req, res, next) => {
     return res.status(HTTP_STATUS.OK).json(
       formatSuccessResponse(
         {
-          commentId,
+          commentId: taskCommentId,
           restoredCount: cascadeResult.restoredCount,
           warnings: cascadeResult.warnings,
         },
@@ -695,7 +699,7 @@ export const restoreTaskComment = async (req, res, next) => {
       error: error.message,
       stack: error.stack,
       userId: req.user?.userId,
-      commentId: req.params.commentId,
+      commentId: req.params.taskCommentId,
     });
     next(error);
   } finally {
