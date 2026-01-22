@@ -839,7 +839,8 @@ export const ACTIVITY_ERROR_MESSAGES = {
   ALREADY_DELETED: "Activity is already deleted",
   NOT_DELETED: "Activity is not deleted",
   CANNOT_UPDATE_DELETED: "Cannot update deleted activity",
-  ORGANIZATION_MISMATCH: "You can only create activities in your own organization",
+  ORGANIZATION_MISMATCH:
+    "You can only create activities in your own organization",
   ROUTINE_TASK_ACTIVITY: "TaskActivity cannot be created for RoutineTask",
 };
 
@@ -867,4 +868,48 @@ export const ACTIVITY_LOG_MESSAGES = {
   RESTORE_REQUEST: "Restore activity request",
   RESTORE_SUCCESS: "Activity restored successfully",
   RESTORE_FAILED: "Restore activity failed",
+};
+
+/**
+ * Comment Error Messages
+ * Consistent error messages for comment operations
+ * @readonly
+ */
+export const COMMENT_ERROR_MESSAGES = {
+  NOT_FOUND: (id) => `Comment with ID ${id} not found`,
+  ALREADY_DELETED: "Comment is already deleted",
+  NOT_DELETED: "Comment is not deleted",
+  CANNOT_UPDATE_DELETED: "Cannot update deleted comment",
+  ORGANIZATION_MISMATCH:
+    "You can only create comments in your own organization",
+  MAX_DEPTH_EXCEEDED: (depth) =>
+    `Comment depth ${depth} exceeds maximum ${COMMENT_MAX_DEPTH}`,
+  PARENT_NOT_FOUND: "Parent resource not found",
+  PARENT_DELETED: "Cannot comment on deleted parent",
+};
+
+/**
+ * Comment Log Messages
+ * Consistent log messages for comment operations
+ * @readonly
+ */
+export const COMMENT_LOG_MESSAGES = {
+  GET_ALL_REQUEST: "Get all comments request",
+  GET_ALL_SUCCESS: "Comments retrieved successfully",
+  GET_ALL_FAILED: "Get all comments failed",
+  GET_BY_ID_REQUEST: "Get comment by ID request",
+  GET_BY_ID_SUCCESS: "Comment retrieved successfully",
+  GET_BY_ID_FAILED: "Get comment by ID failed",
+  CREATE_REQUEST: "Create comment request",
+  CREATE_SUCCESS: "Comment created successfully",
+  CREATE_FAILED: "Create comment failed",
+  UPDATE_REQUEST: "Update comment request",
+  UPDATE_SUCCESS: "Comment updated successfully",
+  UPDATE_FAILED: "Update comment failed",
+  DELETE_REQUEST: "Delete comment request",
+  DELETE_SUCCESS: "Comment deleted successfully",
+  DELETE_FAILED: "Delete comment failed",
+  RESTORE_REQUEST: "Restore comment request",
+  RESTORE_SUCCESS: "Comment restored successfully",
+  RESTORE_FAILED: "Restore comment failed",
 };
