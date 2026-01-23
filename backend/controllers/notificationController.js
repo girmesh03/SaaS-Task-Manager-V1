@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { Notification } from "../models/index.js";
 import CustomError from "../errorHandler/CustomError.js";
-import { HTTP_STATUS, ERROR_CODES } from "../utils/constants.js";
+import { HTTP_STATUS, ERROR_CODES, USER_ROLES } from "../utils/constants.js";
 import logger from "../utils/logger.js";
 import {
   formatSuccessResponse,
@@ -110,13 +110,13 @@ export const getAllNotifications = async (req, res, next) => {
     // - If User (not HOD): Scoped to their department
     if (department) {
       filter.department = department;
-    } else if (!isHod && req.user.role === "User") {
+    } else if (!isHod && req.user.role === USER_ROLES.USER) {
       filter.department = userDepartment._id;
     }
 
     // Recipients Filter - Users can only see notifications where they are recipients
     // SuperAdmin/Admin/Manager can see all notifications in their scope
-    if (req.user.role === "User") {
+    if (req.user.role === USER_ROLES.USER) {
       filter.recipients = userId;
     } else if (recipient) {
       // If explicit recipient filter provided (for Admin/Manager)
@@ -269,7 +269,7 @@ export const getNotificationById = async (req, res, next) => {
     );
 
     // Validate user is a recipient (unless SuperAdmin/Admin/Manager)
-    if (req.user.role === "User") {
+    if (req.user.role === USER_ROLES.USER) {
       const isRecipient = notificationObj.recipients.some(
         (recipient) => recipient._id.toString() === userId
       );
@@ -347,7 +347,7 @@ export const markAsRead = async (req, res, next) => {
     validateOrganizationScope(notification, req.user, "update", "notification");
 
     // Validate user is a recipient (unless SuperAdmin/Admin/Manager)
-    if (req.user.role === "User") {
+    if (req.user.role === USER_ROLES.USER) {
       const isRecipient = notification.recipients.some(
         (recipient) => recipient.toString() === userId
       );
@@ -478,7 +478,7 @@ export const batchMarkAsRead = async (req, res, next) => {
       );
 
       // Validate user is a recipient (unless SuperAdmin/Admin/Manager)
-      if (req.user.role === "User") {
+      if (req.user.role === USER_ROLES.USER) {
         const isRecipient = notification.recipients.some(
           (recipient) => recipient.toString() === userId
         );
@@ -577,7 +577,10 @@ export const deleteNotification = async (req, res, next) => {
     validateOrganizationScope(notification, req.user, "delete", "notification");
 
     // Validate user is a recipient (unless SuperAdmin/Admin)
-    if (req.user.role === "Manager" || req.user.role === "User") {
+    if (
+      req.user.role === USER_ROLES.MANAGER ||
+      req.user.role === USER_ROLES.USER
+    ) {
       const isRecipient = notification.recipients.some(
         (recipient) => recipient.toString() === userId
       );

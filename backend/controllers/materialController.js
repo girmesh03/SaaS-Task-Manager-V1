@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { Material } from "../models/index.js";
 import CustomError from "../errorHandler/CustomError.js";
-import { HTTP_STATUS, ERROR_CODES } from "../utils/constants.js";
+import { HTTP_STATUS, ERROR_CODES, USER_ROLES } from "../utils/constants.js";
 import logger from "../utils/logger.js";
 import {
   formatSuccessResponse,
@@ -44,6 +44,29 @@ import {
  * @property {Function} populate - Populate references
  * @property {Function} toObject - Convert to plain object
  */
+
+/**
+ * Standard population configuration for material queries
+ * @constant
+ */
+const MATERIAL_POPULATE_CONFIG = [
+  {
+    path: "createdBy",
+    select: "firstName lastName email profilePicture",
+  },
+  {
+    path: "addedBy",
+    select: "firstName lastName email profilePicture",
+  },
+  {
+    path: "organization",
+    select: "name",
+  },
+  {
+    path: "department",
+    select: "name",
+  },
+];
 
 /**
  * Get all materials with pagination and filtering
@@ -101,7 +124,7 @@ export const getAllMaterials = async (req, res, next) => {
     // - If User (not HOD): Scoped to their department
     if (department) {
       filter.department = department;
-    } else if (!isHod && req.user.role === "User") {
+    } else if (!isHod && req.user.role === USER_ROLES.USER) {
       filter.department = userDepartment._id;
     }
 
@@ -123,24 +146,7 @@ export const getAllMaterials = async (req, res, next) => {
       page: paginationOptions.page,
       limit: paginationOptions.limit,
       sort: { createdAt: -1 },
-      populate: [
-        {
-          path: "createdBy",
-          select: "firstName lastName email profilePicture",
-        },
-        {
-          path: "addedBy",
-          select: "firstName lastName email profilePicture",
-        },
-        {
-          path: "organization",
-          select: "name",
-        },
-        {
-          path: "department",
-          select: "name",
-        },
-      ],
+      populate: MATERIAL_POPULATE_CONFIG,
       lean: true,
     };
 
@@ -214,24 +220,7 @@ export const getMaterialById = async (req, res, next) => {
     });
 
     // Populate and convert to plain object
-    await material.populate([
-      {
-        path: "createdBy",
-        select: "firstName lastName email profilePicture",
-      },
-      {
-        path: "addedBy",
-        select: "firstName lastName email profilePicture",
-      },
-      {
-        path: "organization",
-        select: "name",
-      },
-      {
-        path: "department",
-        select: "name",
-      },
-    ]);
+    await material.populate(MATERIAL_POPULATE_CONFIG);
     const materialObj = material.toObject();
 
     // Validate organization scope
@@ -305,24 +294,7 @@ export const createMaterial = async (req, res, next) => {
     await session.commitTransaction();
 
     // Populate references for response
-    await material.populate([
-      {
-        path: "createdBy",
-        select: "firstName lastName email profilePicture",
-      },
-      {
-        path: "addedBy",
-        select: "firstName lastName email profilePicture",
-      },
-      {
-        path: "organization",
-        select: "name",
-      },
-      {
-        path: "department",
-        select: "name",
-      },
-    ]);
+    await material.populate(MATERIAL_POPULATE_CONFIG);
 
     logger.info("Material created successfully", {
       userId,
@@ -405,24 +377,7 @@ export const updateMaterial = async (req, res, next) => {
     await session.commitTransaction();
 
     // Populate references for response
-    await material.populate([
-      {
-        path: "createdBy",
-        select: "firstName lastName email profilePicture",
-      },
-      {
-        path: "addedBy",
-        select: "firstName lastName email profilePicture",
-      },
-      {
-        path: "organization",
-        select: "name",
-      },
-      {
-        path: "department",
-        select: "name",
-      },
-    ]);
+    await material.populate(MATERIAL_POPULATE_CONFIG);
 
     logger.info("Material updated successfully", {
       userId: req.user.userId,

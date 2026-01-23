@@ -4,6 +4,7 @@ import CustomError from "../errorHandler/CustomError.js";
 import {
   HTTP_STATUS,
   ERROR_CODES,
+  USER_ROLES,
   ACTIVITY_ERROR_MESSAGES,
   ACTIVITY_LOG_MESSAGES,
 } from "../utils/constants.js";
@@ -110,7 +111,7 @@ export const getAllTaskActivities = async (req, res, next) => {
     // - If User (not HOD): Scoped to their department
     if (department) {
       filter.department = department;
-    } else if (!isHod && req.user.role === "User") {
+    } else if (!isHod && req.user.role === USER_ROLES.USER) {
       filter.department = userDepartment._id;
     }
 
@@ -425,7 +426,7 @@ export const updateTaskActivity = async (req, res, next) => {
     // Check ownership if User role (Managers/Admins can edit any in their scope typically, but requirement isn't explicit so I'll assume standard RBAC: Users edit own, Managers/Admins edit any in scope. Wait, usually activities are immutable logs or comment-like. Requirements 11.1 says "Activities/updates on ProjectTask". Often activities are history. But if it wraps "materials added", maybe editable. Given we have an update route, we support it. I will enforce createdBy check for strictness unless Admin/Manager.)
     // Actually, authorization matrix says: User - Read/Write access to own resources.
     if (
-      req.user.role === "User" &&
+      req.user.role === USER_ROLES.USER &&
       activity.createdBy.toString() !== req.user.userId
     ) {
       throw new CustomError(
