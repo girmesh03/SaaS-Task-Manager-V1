@@ -1,5 +1,6 @@
+import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
-import { TaskActivity, Task } from "../models/index.js";
+import { TaskActivity } from "../models/index.js";
 import CustomError from "../errorHandler/CustomError.js";
 import {
   HTTP_STATUS,
@@ -22,6 +23,7 @@ import {
   findResourceById,
   handleCascadeResult,
 } from "../utils/controllerHelpers.js";
+import { emitToOrganization } from "../utils/socketEmitter.js";
 
 /**
  * TaskActivity Controller
@@ -61,7 +63,7 @@ import {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getAllTaskActivities = async (req, res, next) => {
+export const getAllTaskActivities = asyncHandler(async (req, res, next) => {
   try {
     const {
       organization: userOrganization,
@@ -207,7 +209,7 @@ export const getAllTaskActivities = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Get task activity by ID
@@ -219,7 +221,7 @@ export const getAllTaskActivities = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getTaskActivityById = async (req, res, next) => {
+export const getTaskActivityById = asyncHandler(async (req, res, next) => {
   try {
     const { activityId } = req.params;
 
@@ -290,7 +292,7 @@ export const getTaskActivityById = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Create new task activity
@@ -303,7 +305,7 @@ export const getTaskActivityById = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const createTaskActivity = async (req, res, next) => {
+export const createTaskActivity = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -359,7 +361,8 @@ export const createTaskActivity = async (req, res, next) => {
       resourceType: "TASK_ACTIVITY",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization("activity:created", { activity }, activity.organization);
 
     // Return success response
     return res
@@ -383,7 +386,7 @@ export const createTaskActivity = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Update task activity
@@ -396,7 +399,7 @@ export const createTaskActivity = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const updateTaskActivity = async (req, res, next) => {
+export const updateTaskActivity = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -470,7 +473,8 @@ export const updateTaskActivity = async (req, res, next) => {
       resourceType: "TASK_ACTIVITY",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization("activity:updated", { activity }, activity.organization);
 
     // Return success response
     return res
@@ -495,7 +499,7 @@ export const updateTaskActivity = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Soft delete task activity with cascade operations
@@ -507,7 +511,7 @@ export const updateTaskActivity = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const deleteTaskActivity = async (req, res, next) => {
+export const deleteTaskActivity = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -571,7 +575,12 @@ export const deleteTaskActivity = async (req, res, next) => {
       resourceType: "TASK_ACTIVITY",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "activity:deleted",
+      { activityId, deletedCount: cascadeResult.deletedCount },
+      activity.organization
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -598,7 +607,7 @@ export const deleteTaskActivity = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Restore soft-deleted task activity with cascade operations
@@ -610,7 +619,7 @@ export const deleteTaskActivity = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const restoreTaskActivity = async (req, res, next) => {
+export const restoreTaskActivity = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -668,7 +677,12 @@ export const restoreTaskActivity = async (req, res, next) => {
       resourceType: "TASK_ACTIVITY",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "activity:restored",
+      { activityId, restoredCount: cascadeResult.restoredCount },
+      activity.organization
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -695,7 +709,7 @@ export const restoreTaskActivity = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 export default {
   getAllTaskActivities,

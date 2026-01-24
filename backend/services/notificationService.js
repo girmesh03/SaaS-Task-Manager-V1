@@ -3,6 +3,7 @@ import Notification from "../models/Notification.js";
 import User from "../models/User.js";
 import logger from "../utils/logger.js";
 import { NOTIFICATION_TYPES, SOCKET_EVENTS } from "../utils/constants.js";
+import { getSocketIO } from "../utils/socketInstance.js";
 
 /**
  * Notification Service
@@ -14,12 +15,30 @@ import { NOTIFICATION_TYPES, SOCKET_EVENTS } from "../utils/constants.js";
  */
 
 /**
+ * Logging message constants
+ * @constant
+ * @private
+ */
+const LOG_MESSAGES = {
+  VALIDATION_FAILED: "Recipient validation failed",
+  NO_RECIPIENTS: "No recipients after filtering",
+  NOTIFICATION_CREATED: "Notification created successfully",
+  NOTIFICATION_FAILED: "Failed to create notification",
+  SOCKET_EMIT_SUCCESS: "Notification emitted via Socket.IO",
+  SOCKET_EMIT_FAILED: "Failed to emit notification via Socket.IO",
+  SOCKET_UNAVAILABLE:
+    "Socket.IO instance not available, skipping real-time emit",
+};
+
+/**
  * Validate recipients belong to same organization and department
+ * @private
  * @param {Array<mongoose.Types.ObjectId>} recipientIds - Array of recipient user IDs
  * @param {mongoose.Types.ObjectId} organizationId - Organization ID
  * @param {mongoose.Types.ObjectId} departmentId - Department ID
- * @param {mongoose.ClientSession} session - MongoDB session
- * @returns {Promise<{valid: boolean, invalidRecipients: Array, message: string}>}
+ * @param {mongoose.ClientSession} [session=null] - MongoDB session
+ * @returns {Promise<{valid: boolean, invalidRecipients: Array<mongoose.Types.ObjectId>, message: string}>} Validation result
+ * @throws {Error} If database query fails
  */
 const validateRecipients = async (
   recipientIds,
@@ -107,14 +126,19 @@ const validateRecipients = async (
 
 /**
  * Emit Socket.IO event for real-time notification
+ * @private
  * @param {Object} notification - Notification document
- * @param {Object} io - Socket.IO instance
+ * @returns {boolean} True if emission successful, false otherwise
  */
-const emitNotificationEvent = (notification, io) => {
+const emitNotificationEvent = (notification) => {
   try {
+    const io = getSocketIO();
+
     if (!io) {
-      logger.warn("Socket.IO instance not available, skipping real-time emit");
-      return;
+      logger.warn(LOG_MESSAGES.SOCKET_UNAVAILABLE, {
+        notificationId: notification._id,
+      });
+      return false;
     }
 
     // Emit to each recipient's room
@@ -124,19 +148,117 @@ const emitNotificationEvent = (notification, io) => {
         notification: notification.toObject(),
       });
 
-      logger.info("Notification emitted via Socket.IO", {
+      logger.info(LOG_MESSAGES.SOCKET_EMIT_SUCCESS, {
         notificationId: notification._id,
         recipientId,
         room,
         type: notification.type,
       });
     });
+
+    return true;
   } catch (error) {
-    logger.error("Failed to emit notification via Socket.IO", {
+    logger.error(LOG_MESSAGES.SOCKET_EMIT_FAILED, {
       error: error.message,
       stack: error.stack,
       notificationId: notification._id,
     });
+    return false;
+  }
+};
+
+/**
+ * Generic notification creation helper
+ * Handles validation, creation, and Socket.IO emission
+ * @private
+ * @param {Object} params - Notification parameters
+ * @param {string} params.title - Notification title
+ * @param {string} params.message - Notification message
+ * @param {string} params.type - Notification type from NOTIFICATION_TYPES
+ * @param {Array<mongoose.Types.ObjectId>} params.recipientIds - Array of recipient user IDs
+ * @param {mongoose.Types.ObjectId} params.organizationId - Organization ID
+ * @param {mongoose.Types.ObjectId} params.departmentId - Department ID
+ * @param {mongoose.Types.ObjectId} [params.entityId=null] - Entity ID (Task, TaskActivity, TaskComment)
+ * @param {string} [params.entityModel=null] - Entity model name
+ * @param {mongoose.Types.ObjectId} [params.actorId=null] - User who triggered the action (to filter out)
+ * @param {mongoose.ClientSession} [params.session=null] - MongoDB session
+ * @returns {Promise<{success: boolean, notification: Object|null, error: string|null}>} Creation result
+ */
+const createNotificationWithValidation = async ({
+  title,
+  message,
+  type,
+  recipientIds,
+  organizationId,
+  departmentId,
+  entityId = null,
+  entityModel = null,
+  actorId = null,
+  session = null,
+}) => {
+  try {
+    // Filter out actor if provided (don't notify the person who triggered the action)
+    const filteredRecipientIds = actorId
+      ? recipientIds.filter((id) => id.toString() !== actorId.toString())
+      : recipientIds;
+
+    // Skip if no recipients after filtering
+    if (filteredRecipientIds.length === 0) {
+      logger.info(LOG_MESSAGES.NO_RECIPIENTS, { type, actorId });
+      return { success: true, notification: null, error: null };
+    }
+
+    // Validate recipients
+    const validation = await validateRecipients(
+      filteredRecipientIds,
+      organizationId,
+      departmentId,
+      session
+    );
+
+    if (!validation.valid) {
+      logger.error(LOG_MESSAGES.VALIDATION_FAILED, {
+        type,
+        invalidRecipients: validation.invalidRecipients,
+        message: validation.message,
+      });
+      return { success: false, notification: null, error: validation.message };
+    }
+
+    // Create notification
+    const notification = await Notification.create(
+      [
+        {
+          title,
+          message,
+          type,
+          recipients: filteredRecipientIds,
+          entity: entityId,
+          entityModel,
+          organization: organizationId,
+          department: departmentId,
+        },
+      ],
+      { session }
+    );
+
+    logger.info(LOG_MESSAGES.NOTIFICATION_CREATED, {
+      notificationId: notification[0]._id,
+      type,
+      recipientCount: filteredRecipientIds.length,
+    });
+
+    // Emit Socket.IO event
+    emitNotificationEvent(notification[0]);
+
+    return { success: true, notification: notification[0], error: null };
+  } catch (error) {
+    logger.error(LOG_MESSAGES.NOTIFICATION_FAILED, {
+      error: error.message,
+      stack: error.stack,
+      type,
+    });
+    return { success: false, notification: null, error: error.message };
   }
 };
 
@@ -150,9 +272,8 @@ const emitNotificationEvent = (notification, io) => {
  * @param {string} params.assignedByName - Name of user who assigned the task
  * @param {mongoose.Types.ObjectId} params.organizationId - Organization ID
  * @param {mongoose.Types.ObjectId} params.departmentId - Department ID
- * @param {mongoose.ClientSession} params.session - MongoDB session
- * @param {Object} params.io - Socket.IO instance
- * @returns {Promise<{success: boolean, notification: Object|null, error: string|null}>}
+ * @param {mongoose.ClientSession} [params.session=null] - MongoDB session
+ * @returns {Promise<{success: boolean, notification: Object|null, error: string|null}>} Creation result
  */
 export const createTaskAssignmentNotification = async ({
   taskId,
@@ -163,85 +284,28 @@ export const createTaskAssignmentNotification = async ({
   organizationId,
   departmentId,
   session = null,
-  io = null,
 }) => {
-  try {
-    logger.info("Creating task assignment notification", {
-      taskId,
-      taskTitle,
-      assigneeIds,
-      assignedBy,
-      organizationId,
-      departmentId,
-    });
+  logger.info("Creating task assignment notification", {
+    taskId,
+    taskTitle,
+    assigneeIds,
+    assignedBy,
+    organizationId,
+    departmentId,
+  });
 
-    // Validate recipients
-    const validation = await validateRecipients(
-      assigneeIds,
-      organizationId,
-      departmentId,
-      session
-    );
-
-    if (!validation.valid) {
-      logger.error("Recipient validation failed for task assignment", {
-        taskId,
-        invalidRecipients: validation.invalidRecipients,
-        message: validation.message,
-      });
-
-      return {
-        success: false,
-        notification: null,
-        error: validation.message,
-      };
-    }
-
-    // Create notification
-    const notification = await Notification.create(
-      [
-        {
-          title: "New Task Assigned",
-          message: `You have been assigned to task: ${taskTitle} by ${assignedByName}`,
-          type: NOTIFICATION_TYPES.TASK_ASSIGNED,
-          recipients: assigneeIds,
-          entity: taskId,
-          entityModel: "Task",
-          organization: organizationId,
-          department: departmentId,
-        },
-      ],
-      { session }
-    );
-
-    logger.info("Task assignment notification created successfully", {
-      notificationId: notification[0]._id,
-      taskId,
-      recipientCount: assigneeIds.length,
-    });
-
-    // Emit Socket.IO event for real-time notification
-    emitNotificationEvent(notification[0], io);
-
-    return {
-      success: true,
-      notification: notification[0],
-      error: null,
-    };
-  } catch (error) {
-    logger.error("Failed to create task assignment notification", {
-      error: error.message,
-      stack: error.stack,
-      taskId,
-      assigneeIds,
-    });
-
-    return {
-      success: false,
-      notification: null,
-      error: error.message,
-    };
-  }
+  return createNotificationWithValidation({
+    title: "New Task Assigned",
+    message: `You have been assigned to task: ${taskTitle} by ${assignedByName}`,
+    type: NOTIFICATION_TYPES.TASK_ASSIGNED,
+    recipientIds: assigneeIds,
+    organizationId,
+    departmentId,
+    entityId: taskId,
+    entityModel: "Task",
+    actorId: assignedBy,
+    session,
+  });
 };
 
 /**
@@ -255,9 +319,8 @@ export const createTaskAssignmentNotification = async ({
  * @param {string} params.updateDescription - Description of what was updated
  * @param {mongoose.Types.ObjectId} params.organizationId - Organization ID
  * @param {mongoose.Types.ObjectId} params.departmentId - Department ID
- * @param {mongoose.ClientSession} params.session - MongoDB session
- * @param {Object} params.io - Socket.IO instance
- * @returns {Promise<{success: boolean, notification: Object|null, error: string|null}>}
+ * @param {mongoose.ClientSession} [params.session=null] - MongoDB session
+ * @returns {Promise<{success: boolean, notification: Object|null, error: string|null}>} Creation result
  */
 export const createTaskUpdateNotification = async ({
   taskId,
@@ -269,108 +332,29 @@ export const createTaskUpdateNotification = async ({
   organizationId,
   departmentId,
   session = null,
-  io = null,
 }) => {
-  try {
-    logger.info("Creating task update notification", {
-      taskId,
-      taskTitle,
-      recipientIds,
-      updatedBy,
-      updateDescription,
-      organizationId,
-      departmentId,
-    });
+  logger.info("Creating task update notification", {
+    taskId,
+    taskTitle,
+    recipientIds,
+    updatedBy,
+    updateDescription,
+    organizationId,
+    departmentId,
+  });
 
-    // Filter out the user who made the update (don't notify themselves)
-    const filteredRecipientIds = recipientIds.filter(
-      (id) => id.toString() !== updatedBy.toString()
-    );
-
-    // If no recipients after filtering, skip notification
-    if (filteredRecipientIds.length === 0) {
-      logger.info(
-        "No recipients for task update notification after filtering",
-        {
-          taskId,
-          updatedBy,
-        }
-      );
-
-      return {
-        success: true,
-        notification: null,
-        error: null,
-      };
-    }
-
-    // Validate recipients
-    const validation = await validateRecipients(
-      filteredRecipientIds,
-      organizationId,
-      departmentId,
-      session
-    );
-
-    if (!validation.valid) {
-      logger.error("Recipient validation failed for task update", {
-        taskId,
-        invalidRecipients: validation.invalidRecipients,
-        message: validation.message,
-      });
-
-      return {
-        success: false,
-        notification: null,
-        error: validation.message,
-      };
-    }
-
-    // Create notification
-    const notification = await Notification.create(
-      [
-        {
-          title: "Task Updated",
-          message: `Task "${taskTitle}" was updated by ${updatedByName}: ${updateDescription}`,
-          type: NOTIFICATION_TYPES.TASK_UPDATED,
-          recipients: filteredRecipientIds,
-          entity: taskId,
-          entityModel: "Task",
-          organization: organizationId,
-          department: departmentId,
-        },
-      ],
-      { session }
-    );
-
-    logger.info("Task update notification created successfully", {
-      notificationId: notification[0]._id,
-      taskId,
-      recipientCount: filteredRecipientIds.length,
-    });
-
-    // Emit Socket.IO event for real-time notification
-    emitNotificationEvent(notification[0], io);
-
-    return {
-      success: true,
-      notification: notification[0],
-      error: null,
-    };
-  } catch (error) {
-    logger.error("Failed to create task update notification", {
-      error: error.message,
-      stack: error.stack,
-      taskId,
-      recipientIds,
-    });
-
-    return {
-      success: false,
-      notification: null,
-      error: error.message,
-    };
-  }
+  return createNotificationWithValidation({
+    title: "Task Updated",
+    message: `Task "${taskTitle}" was updated by ${updatedByName}: ${updateDescription}`,
+    type: NOTIFICATION_TYPES.TASK_UPDATED,
+    recipientIds,
+    organizationId,
+    departmentId,
+    entityId: taskId,
+    entityModel: "Task",
+    actorId: updatedBy,
+    session,
+  });
 };
 
 /**
@@ -386,9 +370,8 @@ export const createTaskUpdateNotification = async ({
  * @param {string} params.commentPreview - Preview of comment content (first 100 chars)
  * @param {mongoose.Types.ObjectId} params.organizationId - Organization ID
  * @param {mongoose.Types.ObjectId} params.departmentId - Department ID
- * @param {mongoose.ClientSession} params.session - MongoDB session
- * @param {Object} params.io - Socket.IO instance
- * @returns {Promise<{success: boolean, notification: Object|null, error: string|null}>}
+ * @param {mongoose.ClientSession} [params.session=null] - MongoDB session
+ * @returns {Promise<{success: boolean, notification: Object|null, error: string|null}>} Creation result
  */
 export const createCommentNotification = async ({
   commentId,
@@ -402,105 +385,29 @@ export const createCommentNotification = async ({
   organizationId,
   departmentId,
   session = null,
-  io = null,
 }) => {
-  try {
-    logger.info("Creating comment notification", {
-      commentId,
-      parentId,
-      parentModel,
-      recipientIds,
-      commentedBy,
-      organizationId,
-      departmentId,
-    });
+  logger.info("Creating comment notification", {
+    commentId,
+    parentId,
+    parentModel,
+    recipientIds,
+    commentedBy,
+    organizationId,
+    departmentId,
+  });
 
-    // Filter out the user who made the comment (don't notify themselves)
-    const filteredRecipientIds = recipientIds.filter(
-      (id) => id.toString() !== commentedBy.toString()
-    );
-
-    // If no recipients after filtering, skip notification
-    if (filteredRecipientIds.length === 0) {
-      logger.info("No recipients for comment notification after filtering", {
-        commentId,
-        commentedBy,
-      });
-
-      return {
-        success: true,
-        notification: null,
-        error: null,
-      };
-    }
-
-    // Validate recipients
-    const validation = await validateRecipients(
-      filteredRecipientIds,
-      organizationId,
-      departmentId,
-      session
-    );
-
-    if (!validation.valid) {
-      logger.error("Recipient validation failed for comment", {
-        commentId,
-        invalidRecipients: validation.invalidRecipients,
-        message: validation.message,
-      });
-
-      return {
-        success: false,
-        notification: null,
-        error: validation.message,
-      };
-    }
-
-    // Create notification
-    const notification = await Notification.create(
-      [
-        {
-          title: "New Comment Added",
-          message: `${commentedByName} commented on "${parentTitle}": ${commentPreview}`,
-          type: NOTIFICATION_TYPES.COMMENT_ADDED,
-          recipients: filteredRecipientIds,
-          entity: commentId,
-          entityModel: "TaskComment",
-          organization: organizationId,
-          department: departmentId,
-        },
-      ],
-      { session }
-    );
-
-    logger.info("Comment notification created successfully", {
-      notificationId: notification[0]._id,
-      commentId,
-      recipientCount: filteredRecipientIds.length,
-    });
-
-    // Emit Socket.IO event for real-time notification
-    emitNotificationEvent(notification[0], io);
-
-    return {
-      success: true,
-      notification: notification[0],
-      error: null,
-    };
-  } catch (error) {
-    logger.error("Failed to create comment notification", {
-      error: error.message,
-      stack: error.stack,
-      commentId,
-      recipientIds,
-    });
-
-    return {
-      success: false,
-      notification: null,
-      error: error.message,
-    };
-  }
+  return createNotificationWithValidation({
+    title: "New Comment Added",
+    message: `${commentedByName} commented on "${parentTitle}": ${commentPreview}`,
+    type: NOTIFICATION_TYPES.COMMENT_ADDED,
+    recipientIds,
+    organizationId,
+    departmentId,
+    entityId: commentId,
+    entityModel: "TaskComment",
+    actorId: commentedBy,
+    session,
+  });
 };
 
 /**
@@ -515,9 +422,8 @@ export const createCommentNotification = async ({
  * @param {string} params.contextPreview - Preview of context where mention occurred
  * @param {mongoose.Types.ObjectId} params.organizationId - Organization ID
  * @param {mongoose.Types.ObjectId} params.departmentId - Department ID
- * @param {mongoose.ClientSession} params.session - MongoDB session
- * @param {Object} params.io - Socket.IO instance
- * @returns {Promise<{success: boolean, notification: Object|null, error: string|null}>}
+ * @param {mongoose.ClientSession} [params.session=null] - MongoDB session
+ * @returns {Promise<{success: boolean, notification: Object|null, error: string|null}>} Creation result
  */
 export const createMentionNotification = async ({
   entityId,
@@ -530,104 +436,28 @@ export const createMentionNotification = async ({
   organizationId,
   departmentId,
   session = null,
-  io = null,
 }) => {
-  try {
-    logger.info("Creating mention notification", {
-      entityId,
-      entityModel,
-      mentionedUserIds,
-      mentionedBy,
-      organizationId,
-      departmentId,
-    });
+  logger.info("Creating mention notification", {
+    entityId,
+    entityModel,
+    mentionedUserIds,
+    mentionedBy,
+    organizationId,
+    departmentId,
+  });
 
-    // Filter out the user who made the mention (don't notify themselves)
-    const filteredMentionedUserIds = mentionedUserIds.filter(
-      (id) => id.toString() !== mentionedBy.toString()
-    );
-
-    // If no recipients after filtering, skip notification
-    if (filteredMentionedUserIds.length === 0) {
-      logger.info("No recipients for mention notification after filtering", {
-        entityId,
-        mentionedBy,
-      });
-
-      return {
-        success: true,
-        notification: null,
-        error: null,
-      };
-    }
-
-    // Validate recipients
-    const validation = await validateRecipients(
-      filteredMentionedUserIds,
-      organizationId,
-      departmentId,
-      session
-    );
-
-    if (!validation.valid) {
-      logger.error("Recipient validation failed for mention", {
-        entityId,
-        invalidRecipients: validation.invalidRecipients,
-        message: validation.message,
-      });
-
-      return {
-        success: false,
-        notification: null,
-        error: validation.message,
-      };
-    }
-
-    // Create notification
-    const notification = await Notification.create(
-      [
-        {
-          title: "You Were Mentioned",
-          message: `${mentionedByName} mentioned you in "${entityTitle}": ${contextPreview}`,
-          type: NOTIFICATION_TYPES.MENTION,
-          recipients: filteredMentionedUserIds,
-          entity: entityId,
-          entityModel,
-          organization: organizationId,
-          department: departmentId,
-        },
-      ],
-      { session }
-    );
-
-    logger.info("Mention notification created successfully", {
-      notificationId: notification[0]._id,
-      entityId,
-      recipientCount: filteredMentionedUserIds.length,
-    });
-
-    // Emit Socket.IO event for real-time notification
-    emitNotificationEvent(notification[0], io);
-
-    return {
-      success: true,
-      notification: notification[0],
-      error: null,
-    };
-  } catch (error) {
-    logger.error("Failed to create mention notification", {
-      error: error.message,
-      stack: error.stack,
-      entityId,
-      mentionedUserIds,
-    });
-
-    return {
-      success: false,
-      notification: null,
-      error: error.message,
-    };
-  }
+  return createNotificationWithValidation({
+    title: "You Were Mentioned",
+    message: `${mentionedByName} mentioned you in "${entityTitle}": ${contextPreview}`,
+    type: NOTIFICATION_TYPES.MENTION,
+    recipientIds: mentionedUserIds,
+    organizationId,
+    departmentId,
+    entityId,
+    entityModel,
+    actorId: mentionedBy,
+    session,
+  });
 };
 
 /**
@@ -638,11 +468,10 @@ export const createMentionNotification = async ({
  * @param {Array<mongoose.Types.ObjectId>} params.recipientIds - Array of recipient user IDs
  * @param {mongoose.Types.ObjectId} params.organizationId - Organization ID
  * @param {mongoose.Types.ObjectId} params.departmentId - Department ID
- * @param {mongoose.Types.ObjectId} params.entityId - Optional entity ID
- * @param {string} params.entityModel - Optional entity model name
- * @param {mongoose.ClientSession} params.session - MongoDB session
- * @param {Object} params.io - Socket.IO instance
- * @returns {Promise<{success: boolean, notification: Object|null, error: string|null}>}
+ * @param {mongoose.Types.ObjectId} [params.entityId=null] - Optional entity ID
+ * @param {string} [params.entityModel=null] - Optional entity model name
+ * @param {mongoose.ClientSession} [params.session=null] - MongoDB session
+ * @returns {Promise<{success: boolean, notification: Object|null, error: string|null}>} Creation result
  */
 export const createSystemAlertNotification = async ({
   title,
@@ -653,85 +482,28 @@ export const createSystemAlertNotification = async ({
   entityId = null,
   entityModel = null,
   session = null,
-  io = null,
 }) => {
-  try {
-    logger.info("Creating system alert notification", {
-      title,
-      recipientIds,
-      organizationId,
-      departmentId,
-      entityId,
-      entityModel,
-    });
+  logger.info("Creating system alert notification", {
+    title,
+    recipientIds,
+    organizationId,
+    departmentId,
+    entityId,
+    entityModel,
+  });
 
-    // Validate recipients
-    const validation = await validateRecipients(
-      recipientIds,
-      organizationId,
-      departmentId,
-      session
-    );
-
-    if (!validation.valid) {
-      logger.error("Recipient validation failed for system alert", {
-        title,
-        invalidRecipients: validation.invalidRecipients,
-        message: validation.message,
-      });
-
-      return {
-        success: false,
-        notification: null,
-        error: validation.message,
-      };
-    }
-
-    // Create notification
-    const notification = await Notification.create(
-      [
-        {
-          title,
-          message,
-          type: NOTIFICATION_TYPES.SYSTEM_ALERT,
-          recipients: recipientIds,
-          entity: entityId,
-          entityModel,
-          organization: organizationId,
-          department: departmentId,
-        },
-      ],
-      { session }
-    );
-
-    logger.info("System alert notification created successfully", {
-      notificationId: notification[0]._id,
-      title,
-      recipientCount: recipientIds.length,
-    });
-
-    // Emit Socket.IO event for real-time notification
-    emitNotificationEvent(notification[0], io);
-
-    return {
-      success: true,
-      notification: notification[0],
-      error: null,
-    };
-  } catch (error) {
-    logger.error("Failed to create system alert notification", {
-      error: error.message,
-      stack: error.stack,
-      title,
-      recipientIds,
-    });
-
-    return {
-      success: false,
-      notification: null,
-      error: error.message,
-    };
-  }
+  return createNotificationWithValidation({
+    title,
+    message,
+    type: NOTIFICATION_TYPES.SYSTEM_ALERT,
+    recipientIds,
+    organizationId,
+    departmentId,
+    entityId,
+    entityModel,
+    actorId: null, // System alerts don't have an actor to filter
+    session,
+  });
 };
 
 export default {

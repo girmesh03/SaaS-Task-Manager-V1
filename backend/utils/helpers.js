@@ -301,6 +301,31 @@ export const safeAbortTransaction = async (session, originalError, logger) => {
   }
 };
 
+/**
+ * Execute a callback within a MongoDB transaction
+ * Handles transaction lifecycle: start, commit, abort, and cleanup
+ * @param {Function} callback - Async callback function that receives session
+ * @param {Object} logger - Logger instance for error logging
+ * @returns {Promise<*>} Result from callback function
+ * @throws {Error} Re-throws error from callback after transaction abort
+ */
+export const withTransaction = async (callback, logger) => {
+  const mongoose = await import("mongoose");
+  const session = await mongoose.default.startSession();
+  session.startTransaction();
+
+  try {
+    const result = await callback(session);
+    await session.commitTransaction();
+    return result;
+  } catch (error) {
+    await safeAbortTransaction(session, error, logger);
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
+
 export default {
   generateRandomString,
   generateRequestId,
@@ -324,4 +349,5 @@ export default {
   escapeRegex,
   isPlatformSuperAdmin,
   safeAbortTransaction,
+  withTransaction,
 };

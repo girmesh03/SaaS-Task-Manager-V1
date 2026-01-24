@@ -1,3 +1,4 @@
+import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
 import { Notification } from "../models/index.js";
 import CustomError from "../errorHandler/CustomError.js";
@@ -15,6 +16,7 @@ import {
   findResourceById,
   handleCascadeResult,
 } from "../utils/controllerHelpers.js";
+import { emitToUser } from "../utils/socketEmitter.js";
 
 /**
  * Notification Controller
@@ -57,7 +59,7 @@ import {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getAllNotifications = async (req, res, next) => {
+export const getAllNotifications = asyncHandler(async (req, res, next) => {
   try {
     const {
       organization: userOrganization,
@@ -213,7 +215,7 @@ export const getAllNotifications = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Get notification by ID
@@ -226,7 +228,7 @@ export const getAllNotifications = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getNotificationById = async (req, res, next) => {
+export const getNotificationById = asyncHandler(async (req, res, next) => {
   try {
     const { notificationId } = req.params;
     const { userId } = req.user;
@@ -306,7 +308,7 @@ export const getNotificationById = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Mark notification as read
@@ -320,7 +322,7 @@ export const getNotificationById = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const markAsRead = async (req, res, next) => {
+export const markAsRead = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -392,7 +394,12 @@ export const markAsRead = async (req, res, next) => {
       resourceType: "NOTIFICATION",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToUser(
+      "notification:read",
+      { notification: updatedNotification },
+      userId
+    );
 
     // Return success response
     return res
@@ -417,7 +424,7 @@ export const markAsRead = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Batch mark notifications as read
@@ -431,7 +438,7 @@ export const markAsRead = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const batchMarkAsRead = async (req, res, next) => {
+export const batchMarkAsRead = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -505,7 +512,12 @@ export const batchMarkAsRead = async (req, res, next) => {
       resourceType: "NOTIFICATION",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToUser(
+      "notifications:batch-read",
+      { notificationIds, updatedCount: result.modifiedCount },
+      userId
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -530,7 +542,7 @@ export const batchMarkAsRead = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Soft delete notification with cascade operations
@@ -544,7 +556,7 @@ export const batchMarkAsRead = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const deleteNotification = async (req, res, next) => {
+export const deleteNotification = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -625,7 +637,12 @@ export const deleteNotification = async (req, res, next) => {
       resourceType: "NOTIFICATION",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToUser(
+      "notification:deleted",
+      { notificationId, deletedCount: cascadeResult.deletedCount },
+      userId
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -652,7 +669,7 @@ export const deleteNotification = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 export default {
   getAllNotifications,

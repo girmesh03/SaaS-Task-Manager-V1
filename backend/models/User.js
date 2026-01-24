@@ -29,6 +29,8 @@ const transformUserDocument = (doc, ret) => {
   delete ret.refreshTokenExpiry;
   delete ret.passwordResetToken;
   delete ret.passwordResetExpiry;
+  delete ret.emailVerificationToken;
+  delete ret.emailVerificationExpiry;
 
   return ret;
 };
@@ -288,6 +290,24 @@ const userSchema = new mongoose.Schema(
       select: false,
       default: null,
     },
+
+    // Email Verification
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    emailVerificationToken: {
+      type: String,
+      select: false,
+      default: null,
+    },
+
+    emailVerificationExpiry: {
+      type: Date,
+      select: false,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -419,6 +439,42 @@ userSchema.methods.verifyPasswordResetToken = function (token) {
 userSchema.methods.clearPasswordResetToken = function () {
   this.passwordResetToken = null;
   this.passwordResetExpiry = null;
+};
+
+// Instance Method: generateEmailVerificationToken
+userSchema.methods.generateEmailVerificationToken = function () {
+  // Generate random token
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+
+  // Hash token and set to emailVerificationToken field
+  this.emailVerificationToken = crypto
+    .createHash("sha256")
+    .update(verificationToken)
+    .digest("hex");
+
+  // Set expiry to 24 hours from now
+  this.emailVerificationExpiry = Date.now() + 24 * 60 * 60 * 1000;
+
+  return verificationToken;
+};
+
+// Instance Method: verifyEmailVerificationToken
+userSchema.methods.verifyEmailVerificationToken = function (token) {
+  // Hash the provided token
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+  // Check if token matches and hasn't expired
+  return (
+    this.emailVerificationToken === hashedToken &&
+    this.emailVerificationExpiry > Date.now()
+  );
+};
+
+// Instance Method: clearEmailVerificationToken
+userSchema.methods.clearEmailVerificationToken = function () {
+  this.emailVerificationToken = null;
+  this.emailVerificationExpiry = null;
+  this.isEmailVerified = true;
 };
 
 // Static Method: Check if last SuperAdmin in organization

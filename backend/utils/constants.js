@@ -184,6 +184,18 @@ export const PAGINATION = {
 };
 
 /**
+ * Query Filter Values
+ * @readonly
+ */
+export const QUERY_FILTERS = {
+  DELETED: {
+    ALL: "true", // Include both deleted and non-deleted
+    ONLY: "only", // Only deleted items
+    NONE: "false", // Only non-deleted items (default)
+  },
+};
+
+/**
  * Rate Limiting
  * @readonly
  */
@@ -750,6 +762,7 @@ export default {
   HTTP_STATUS,
   ERROR_CODES,
   PAGINATION,
+  QUERY_FILTERS,
   RATE_LIMIT,
   TOKEN_EXPIRY,
   TOKEN_EXPIRY_MS,

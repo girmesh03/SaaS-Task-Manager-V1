@@ -13,6 +13,7 @@ import taskActivityRoutes from "./taskActivityRoutes.js";
 import taskCommentRoutes from "./taskCommentRoutes.js";
 import materialRoutes from "./materialRoutes.js";
 import vendorRoutes from "./vendorRoutes.js";
+import notificationRoutes from "./notificationRoutes.js";
 
 const router = express.Router();
 
@@ -26,5 +27,6 @@ router.use("/tasks/activities", taskActivityRoutes);
 router.use("/tasks/comments", taskCommentRoutes);
 router.use("/materials", materialRoutes);
 router.use("/vendors", vendorRoutes);
+router.use("/notifications", notificationRoutes);
 
 export default router;

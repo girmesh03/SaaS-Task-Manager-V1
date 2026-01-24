@@ -1,3 +1,4 @@
+import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
 import { Organization } from "../models/index.js";
 import CustomError from "../errorHandler/CustomError.js";
@@ -10,6 +11,7 @@ import {
   isPlatformSuperAdmin as checkIsPlatformSuperAdmin,
   safeAbortTransaction,
 } from "../utils/helpers.js";
+import { emitToOrganization } from "../utils/socketEmitter.js";
 
 /**
  * @typedef {Object} OrganizationDocument
@@ -385,8 +387,12 @@ export const updateOrganization = async (req, res, next) => {
       resourceType: "ORGANIZATION",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "organization:updated",
+      { organization: organization.toObject() },
+      organization._id
+    );
 
     // Return success response
     return res
@@ -534,7 +540,12 @@ export const deleteOrganization = async (req, res, next) => {
       resourceType: "ORGANIZATION",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "organization:deleted",
+      { organizationId, deletedCount: cascadeResult.deletedCount },
+      organizationId
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -672,7 +683,12 @@ export const restoreOrganization = async (req, res, next) => {
       resourceType: "ORGANIZATION",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "organization:restored",
+      { organizationId, restoredCount: cascadeResult.restoredCount },
+      organizationId
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(

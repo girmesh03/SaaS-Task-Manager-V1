@@ -1,3 +1,4 @@
+import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
 import { Material } from "../models/index.js";
 import CustomError from "../errorHandler/CustomError.js";
@@ -16,6 +17,7 @@ import {
   findResourceById,
   handleCascadeResult,
 } from "../utils/controllerHelpers.js";
+import { emitToOrganization } from "../utils/socketEmitter.js";
 
 /**
  * Material Controller
@@ -78,7 +80,7 @@ const MATERIAL_POPULATE_CONFIG = [
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getAllMaterials = async (req, res, next) => {
+export const getAllMaterials = asyncHandler(async (req, res, next) => {
   try {
     const {
       organization: userOrganization,
@@ -191,7 +193,7 @@ export const getAllMaterials = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Get material by ID
@@ -203,7 +205,7 @@ export const getAllMaterials = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getMaterialById = async (req, res, next) => {
+export const getMaterialById = asyncHandler(async (req, res, next) => {
   try {
     const { materialId } = req.params;
 
@@ -250,7 +252,7 @@ export const getMaterialById = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Create new material
@@ -263,7 +265,7 @@ export const getMaterialById = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const createMaterial = async (req, res, next) => {
+export const createMaterial = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -304,7 +306,8 @@ export const createMaterial = async (req, res, next) => {
       resourceType: "MATERIAL",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization("material:created", { material }, material.organization);
 
     // Return success response
     return res
@@ -325,7 +328,7 @@ export const createMaterial = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Update material
@@ -338,7 +341,7 @@ export const createMaterial = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const updateMaterial = async (req, res, next) => {
+export const updateMaterial = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -386,7 +389,8 @@ export const updateMaterial = async (req, res, next) => {
       resourceType: "MATERIAL",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization("material:updated", { material }, material.organization);
 
     // Return success response
     return res
@@ -408,7 +412,7 @@ export const updateMaterial = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Soft delete material with cascade operations
@@ -421,7 +425,7 @@ export const updateMaterial = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const deleteMaterial = async (req, res, next) => {
+export const deleteMaterial = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -479,7 +483,12 @@ export const deleteMaterial = async (req, res, next) => {
       resourceType: "MATERIAL",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "material:deleted",
+      { materialId, deletedCount: cascadeResult.deletedCount },
+      material.organization
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -506,7 +515,7 @@ export const deleteMaterial = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Restore soft-deleted material with cascade operations
@@ -519,7 +528,7 @@ export const deleteMaterial = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const restoreMaterial = async (req, res, next) => {
+export const restoreMaterial = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -567,7 +576,12 @@ export const restoreMaterial = async (req, res, next) => {
       resourceType: "MATERIAL",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "material:restored",
+      { materialId, restoredCount: cascadeResult.restoredCount },
+      material.organization
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -594,7 +608,7 @@ export const restoreMaterial = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 export default {
   getAllMaterials,

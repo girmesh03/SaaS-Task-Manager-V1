@@ -1,3 +1,4 @@
+import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
 import { Task } from "../models/index.js";
 import CustomError from "../errorHandler/CustomError.js";
@@ -6,13 +7,13 @@ import {
   ERROR_CODES,
   TASK_ERROR_MESSAGES,
   TASK_LOG_MESSAGES,
+  QUERY_FILTERS,
 } from "../utils/constants.js";
 import logger from "../utils/logger.js";
 import {
   formatSuccessResponse,
   getPaginationOptions,
-  safeAbortTransaction,
-  escapeRegex,
+  withTransaction,
 } from "../utils/helpers.js";
 import {
   validateOrganizationScope,
@@ -27,6 +28,11 @@ import {
   getTaskPopulateConfig,
   getTaskSelectFields,
 } from "../utils/taskHelpers.js";
+import {
+  emitTaskCreated,
+  emitTaskUpdated,
+  emitTaskDeleted,
+} from "../utils/socketEmitter.js";
 
 /**
  * @typedef {Object} TaskDocument
@@ -69,7 +75,7 @@ import {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getAllTasks = async (req, res, next) => {
+export const getAllTasks = asyncHandler(async (req, res, next) => {
   try {
     const {
       organization: userOrganization,
@@ -79,20 +85,11 @@ export const getAllTasks = async (req, res, next) => {
 
     // Extract query parameters from validated data (Requirement 41.5)
     const {
-      deleted = false,
+      deleted = QUERY_FILTERS.DELETED.NONE,
       page = 1,
       limit = 10,
       search = "",
-      taskType,
-      status,
-      priority,
-      organization,
-      department,
-      createdBy,
-      assignee,
-      vendor,
-      startDate,
-      endDate,
+      ...filters // taskType, status, priority, organization, department, createdBy, assignee, vendor, startDate, endDate
     } = req.validated.query || {};
 
     logger.info(TASK_LOG_MESSAGES.GET_ALL_REQUEST, {
@@ -103,16 +100,7 @@ export const getAllTasks = async (req, res, next) => {
         page,
         limit,
         search,
-        taskType,
-        status,
-        priority,
-        organization,
-        department,
-        createdBy,
-        assignee,
-        vendor,
-        startDate,
-        endDate,
+        ...filters,
       },
     });
 
@@ -120,15 +108,7 @@ export const getAllTasks = async (req, res, next) => {
     const filter = buildTaskFilter(
       {
         search,
-        taskType,
-        status,
-        priority,
-        department,
-        createdBy,
-        assignee,
-        vendor,
-        startDate,
-        endDate,
+        ...filters,
       },
       { organization: userOrganization, department: userDepartment, isHod }
     );
@@ -149,9 +129,13 @@ export const getAllTasks = async (req, res, next) => {
       lean: true,
     };
 
-    let query = Task.find(filter);
-    if (deleted === "true" || deleted === true) query = query.withDeleted();
-    else if (deleted === "only") query = query.onlyDeleted();
+    // Build query with soft delete handling
+    const query =
+      deleted === QUERY_FILTERS.DELETED.ALL
+        ? Task.find(filter).withDeleted()
+        : deleted === QUERY_FILTERS.DELETED.ONLY
+        ? Task.find(filter).onlyDeleted()
+        : Task.find(filter);
 
     // Execute paginated query
     const result = await Task.paginate(query, options);
@@ -190,7 +174,7 @@ export const getAllTasks = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Get task by ID
@@ -202,7 +186,7 @@ export const getAllTasks = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getTaskById = async (req, res, next) => {
+export const getTaskById = asyncHandler(async (req, res, next) => {
   try {
     const { taskId } = req.params;
 
@@ -249,7 +233,7 @@ export const getTaskById = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Create new task (all task types)
@@ -262,10 +246,7 @@ export const getTaskById = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const createTask = async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
+export const createTask = asyncHandler(async (req, res, next) => {
   try {
     const { organization: userOrganization, userId } = req.user;
     const taskData = req.validated.body;
@@ -285,17 +266,19 @@ export const createTask = async (req, res, next) => {
       );
     }
 
-    // Get appropriate task model based on task type using registry
-    const TaskModel = getTaskModel(taskData.taskType);
+    // Execute within transaction using helper
+    const task = await withTransaction(async (session) => {
+      // Get appropriate task model based on task type using registry
+      const TaskModel = getTaskModel(taskData.taskType);
 
-    // Create task with session (Requirement 40.4)
-    const task = new TaskModel(taskData);
-    await task.save({ session });
+      // Create task with session (Requirement 40.4)
+      const newTask = new TaskModel(taskData);
+      await newTask.save({ session });
 
-    // Commit transaction
-    await session.commitTransaction();
+      return newTask;
+    }, logger);
 
-    // Populate references for response (after transaction commit)
+    // Populate references for response (after transaction commit to avoid locking issues)
     await task.populate(getTaskPopulateConfig());
 
     logger.info(TASK_LOG_MESSAGES.CREATE_SUCCESS, {
@@ -306,26 +289,22 @@ export const createTask = async (req, res, next) => {
       resourceType: "TASK",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitTaskCreated(task, task.organization);
 
     // Return success response
     return res
       .status(HTTP_STATUS.CREATED)
       .json(formatSuccessResponse({ task }, TASK_LOG_MESSAGES.CREATE_SUCCESS));
   } catch (error) {
-    // Rollback transaction on error
-    await safeAbortTransaction(session, error, logger);
-
     logger.error(TASK_LOG_MESSAGES.CREATE_FAILED, {
       error: error.message,
       stack: error.stack,
       userId: req.user?.userId,
     });
     next(error);
-  } finally {
-    session.endSession();
   }
-};
+});
 
 /**
  * Update task (all task types)
@@ -338,10 +317,7 @@ export const createTask = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const updateTask = async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
+export const updateTask = asyncHandler(async (req, res, next) => {
   try {
     const { taskId } = req.params;
     const updateData = req.validated.body;
@@ -353,30 +329,32 @@ export const updateTask = async (req, res, next) => {
       updateFields: Object.keys(updateData),
     });
 
-    // Find task with session using helper (Requirement 40.4)
-    const task = await findResourceById(Task, taskId, {
-      session,
-      resourceType: "Task",
-    });
+    // Execute within transaction using helper
+    const task = await withTransaction(async (session) => {
+      // Find task with session using helper (Requirement 40.4)
+      const foundTask = await findResourceById(Task, taskId, {
+        session,
+        resourceType: "Task",
+      });
 
-    // Validate task is not soft-deleted
-    validateNotDeleted(task, "update", "task");
+      // Validate task is not soft-deleted
+      validateNotDeleted(foundTask, "update", "task");
 
-    // Validate organization scope (Requirement 40.1)
-    validateOrganizationScope(task, req.user, "update", "task");
+      // Validate organization scope (Requirement 40.1)
+      validateOrganizationScope(foundTask, req.user, "update", "task");
 
-    // Update task fields (let Mongoose handle validation)
-    Object.keys(updateData).forEach((key) => {
-      task[key] = updateData[key];
-    });
+      // Update task fields (let Mongoose handle validation)
+      Object.keys(updateData).forEach((key) => {
+        foundTask[key] = updateData[key];
+      });
 
-    // Save task with session (Requirement 40.4)
-    await task.save({ session });
+      // Save task with session (Requirement 40.4)
+      await foundTask.save({ session });
 
-    // Commit transaction
-    await session.commitTransaction();
+      return foundTask;
+    }, logger);
 
-    // Populate references for response (after transaction commit)
+    // Populate references for response (after transaction commit to avoid locking issues)
     await task.populate(getTaskPopulateConfig());
 
     logger.info(TASK_LOG_MESSAGES.UPDATE_SUCCESS, {
@@ -387,16 +365,14 @@ export const updateTask = async (req, res, next) => {
       resourceType: "TASK",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitTaskUpdated(task, task.organization, task.watchers || []);
 
     // Return success response
     return res
       .status(HTTP_STATUS.OK)
       .json(formatSuccessResponse({ task }, TASK_LOG_MESSAGES.UPDATE_SUCCESS));
   } catch (error) {
-    // Rollback transaction on error
-    await safeAbortTransaction(session, error, logger);
-
     logger.error(TASK_LOG_MESSAGES.UPDATE_FAILED, {
       error: error.message,
       stack: error.stack,
@@ -404,10 +380,8 @@ export const updateTask = async (req, res, next) => {
       taskId: req.params.taskId,
     });
     next(error);
-  } finally {
-    session.endSession();
   }
-};
+});
 
 /**
  * Soft delete task with cascade operations
@@ -419,10 +393,7 @@ export const updateTask = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const deleteTask = async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
+export const deleteTask = asyncHandler(async (req, res, next) => {
   try {
     const { taskId } = req.params;
     const { userId } = req.user;
@@ -433,43 +404,34 @@ export const deleteTask = async (req, res, next) => {
       role: req.user.role,
     });
 
-    // Find task using helper
-    const task = await findResourceById(Task, taskId, {
-      session,
-      resourceType: "Task",
-    });
+    // Execute within transaction using helper
+    const { task, cascadeResult } = await withTransaction(async (session) => {
+      // Find task using helper
+      const foundTask = await findResourceById(Task, taskId, {
+        session,
+        resourceType: "Task",
+      });
 
-    // Validate task is not already deleted
-    if (task.isDeleted) {
-      throw new CustomError(
-        TASK_ERROR_MESSAGES.ALREADY_DELETED,
-        HTTP_STATUS.BAD_REQUEST,
-        ERROR_CODES.VALIDATION_ERROR
-      );
-    }
+      // Validate task is not already deleted using helper
+      validateNotDeleted(foundTask, "delete", "task");
 
-    // Validate organization scope (Requirement 40.1)
-    validateOrganizationScope(task, req.user, "delete", "task");
+      // Validate organization scope (Requirement 40.1)
+      validateOrganizationScope(foundTask, req.user, "delete", "task");
 
-    // Get appropriate task model for cascade delete using registry
-    const TaskModel = getTaskModel(task.taskType);
+      // Get appropriate task model for cascade delete using registry
+      const TaskModel = getTaskModel(foundTask.taskType);
 
-    // Perform cascade delete with validation (Requirement 40.5, 40.6)
-    const cascadeResult = await TaskModel.cascadeDelete(
-      taskId,
-      userId,
-      session,
-      {
+      // Perform cascade delete with validation (Requirement 40.5, 40.6)
+      const result = await TaskModel.cascadeDelete(taskId, userId, session, {
         skipValidation: false,
         force: false,
-      }
-    );
+      });
+
+      return { task: foundTask, cascadeResult: result };
+    }, logger);
 
     // Handle cascade result using helper
     handleCascadeResult(cascadeResult, "delete", userId, logger, "TASK");
-
-    // Commit transaction (Requirement 40.4)
-    await session.commitTransaction();
 
     logger.info(TASK_LOG_MESSAGES.DELETE_SUCCESS, {
       userId,
@@ -481,7 +443,8 @@ export const deleteTask = async (req, res, next) => {
       resourceType: "TASK",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitTaskDeleted(taskId, task.organization);
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -495,9 +458,6 @@ export const deleteTask = async (req, res, next) => {
       )
     );
   } catch (error) {
-    // Rollback transaction on error
-    await safeAbortTransaction(session, error, logger);
-
     logger.error(TASK_LOG_MESSAGES.DELETE_FAILED, {
       error: error.message,
       stack: error.stack,
@@ -505,10 +465,8 @@ export const deleteTask = async (req, res, next) => {
       taskId: req.params.taskId,
     });
     next(error);
-  } finally {
-    session.endSession();
   }
-};
+});
 
 /**
  * Restore soft-deleted task with cascade operations
@@ -520,10 +478,7 @@ export const deleteTask = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const restoreTask = async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
+export const restoreTask = asyncHandler(async (req, res, next) => {
   try {
     const { taskId } = req.params;
     const { userId } = req.user;
@@ -534,33 +489,35 @@ export const restoreTask = async (req, res, next) => {
       role: req.user.role,
     });
 
-    // Find task (including soft-deleted) using helper
-    const task = await findResourceById(Task, taskId, {
-      includeDeleted: true,
-      session,
-      resourceType: "Task",
-    });
+    // Execute within transaction using helper
+    const { task, cascadeResult } = await withTransaction(async (session) => {
+      // Find task (including soft-deleted) using helper
+      const foundTask = await findResourceById(Task, taskId, {
+        includeDeleted: true,
+        session,
+        resourceType: "Task",
+      });
 
-    // Validate task is deleted
-    validateIsDeleted(task, "task");
+      // Validate task is deleted using helper
+      validateIsDeleted(foundTask, "task");
 
-    // Validate organization scope (Requirement 40.1)
-    validateOrganizationScope(task, req.user, "restore", "task");
+      // Validate organization scope (Requirement 40.1)
+      validateOrganizationScope(foundTask, req.user, "restore", "task");
 
-    // Get appropriate task model for cascade restore using registry
-    const TaskModel = getTaskModel(task.taskType);
+      // Get appropriate task model for cascade restore using registry
+      const TaskModel = getTaskModel(foundTask.taskType);
 
-    // Perform cascade restore with validation (Requirement 40.5, 40.6)
-    const cascadeResult = await TaskModel.cascadeRestore(taskId, session, {
-      skipValidation: false,
-      validateParents: true,
-    });
+      // Perform cascade restore with validation (Requirement 40.5, 40.6)
+      const result = await TaskModel.cascadeRestore(taskId, session, {
+        skipValidation: false,
+        validateParents: true,
+      });
+
+      return { task: foundTask, cascadeResult: result };
+    }, logger);
 
     // Handle cascade result using helper
     handleCascadeResult(cascadeResult, "restore", userId, logger, "TASK");
-
-    // Commit transaction (Requirement 40.4)
-    await session.commitTransaction();
 
     logger.info(TASK_LOG_MESSAGES.RESTORE_SUCCESS, {
       userId,
@@ -572,7 +529,8 @@ export const restoreTask = async (req, res, next) => {
       resourceType: "TASK",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitTaskUpdated(task, task.organization, task.watchers || []);
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -586,9 +544,6 @@ export const restoreTask = async (req, res, next) => {
       )
     );
   } catch (error) {
-    // Rollback transaction on error
-    await safeAbortTransaction(session, error, logger);
-
     logger.error(TASK_LOG_MESSAGES.RESTORE_FAILED, {
       error: error.message,
       stack: error.stack,
@@ -596,10 +551,8 @@ export const restoreTask = async (req, res, next) => {
       taskId: req.params.taskId,
     });
     next(error);
-  } finally {
-    session.endSession();
   }
-};
+});
 
 export default {
   getAllTasks,

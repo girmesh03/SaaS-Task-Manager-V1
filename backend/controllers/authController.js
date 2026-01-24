@@ -1,3 +1,4 @@
+import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import { User, Organization, Department } from "../models/index.js";
@@ -21,6 +22,11 @@ import {
   formatSuccessResponse,
   safeAbortTransaction,
 } from "../utils/helpers.js";
+import {
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendEmailVerificationEmail,
+} from "../services/emailService.js";
 
 /**
  * @typedef {Object} UserDocument
@@ -211,7 +217,7 @@ const updateUserRefreshToken = async (user, refreshToken) => {
  * @route POST /api/auth/register
  * @access Public
  */
-export const register = async (req, res, next) => {
+export const register = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -280,8 +286,35 @@ export const register = async (req, res, next) => {
       )
       .lean();
 
-    // TODO: Send welcome email (will be implemented in Task 18.1)
-    // TODO: Emit Socket.IO notification (will be implemented in Task 19.2)
+    // Send welcome email
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
+    const frontendUrl = allowedOrigins[0] || "http://localhost:3000";
+    const loginUrl = `${frontendUrl}/login`;
+    await sendWelcomeEmail(
+      user.email,
+      `${user.firstName} ${user.lastName}`,
+      organization.name,
+      loginUrl
+    );
+
+    // Optional: Send email verification email (if EMAIL_VERIFICATION_ENABLED is true)
+    if (process.env.EMAIL_VERIFICATION_ENABLED === "true") {
+      const verificationToken = user.generateEmailVerificationToken();
+      await user.save();
+
+      const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
+      await sendEmailVerificationEmail(
+        user.email,
+        `${user.firstName} ${user.lastName}`,
+        verificationToken,
+        verificationUrl
+      );
+
+      logger.info("Email verification token sent", {
+        userId: user._id,
+        email: user.email,
+      });
+    }
 
     logger.info("Registration successful", {
       userId: user._id,
@@ -311,7 +344,7 @@ export const register = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Login user with email and password
@@ -323,7 +356,7 @@ export const register = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const login = async (req, res, next) => {
+export const login = asyncHandler(async (req, res, next) => {
   try {
     const { email, password } = req.validated.body;
 
@@ -569,7 +602,7 @@ export const login = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Refresh access and refresh tokens
@@ -581,7 +614,7 @@ export const login = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const refreshToken = async (req, res, next) => {
+export const refreshToken = asyncHandler(async (req, res, next) => {
   try {
     // Extract refresh token from httpOnly cookie
     const oldRefreshToken = req.cookies?.refreshToken;
@@ -777,7 +810,7 @@ export const refreshToken = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Logout user
@@ -786,7 +819,7 @@ export const refreshToken = async (req, res, next) => {
  * @route POST /api/auth/logout
  * @access Private
  */
-export const logout = async (req, res, next) => {
+export const logout = asyncHandler(async (req, res, next) => {
   try {
     const userId = req.user.userId;
 
@@ -819,7 +852,7 @@ export const logout = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Forgot password - send password reset email
@@ -831,7 +864,7 @@ export const logout = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const forgotPassword = async (req, res, next) => {
+export const forgotPassword = asyncHandler(async (req, res, next) => {
   try {
     const { email } = req.validated.body;
 
@@ -855,9 +888,16 @@ export const forgotPassword = async (req, res, next) => {
     const resetToken = user.generatePasswordResetToken();
     await user.save();
 
-    // TODO: Send password reset email with token (will be implemented in Task 18.1)
-    // const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
-    // await sendPasswordResetEmail(user.email, resetUrl);
+    // Send password reset email with token
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
+    const frontendUrl = allowedOrigins[0] || "http://localhost:3000";
+    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
+    await sendPasswordResetEmail(
+      user.email,
+      `${user.firstName} ${user.lastName}`,
+      resetToken,
+      resetUrl
+    );
 
     logger.info("Password reset token generated", {
       userId: user._id,
@@ -879,7 +919,7 @@ export const forgotPassword = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Reset password with token
@@ -891,7 +931,7 @@ export const forgotPassword = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const resetPassword = async (req, res, next) => {
+export const resetPassword = asyncHandler(async (req, res, next) => {
   try {
     const { token, password } = req.validated.body;
 
@@ -943,31 +983,85 @@ export const resetPassword = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
- * Verify email (placeholder for future implementation)
+ * Verify email with token
+ * Validates token expiry and marks email as verified
  *
  * @route POST /api/auth/verify-email
  * @access Public
+ * @param {import('express').Request} req - Express request object
+ * @param {import('express').Response} res - Express response object
+ * @param {import('express').NextFunction} next - Express next function
  */
-export const verifyEmail = async (_req, res, next) => {
+export const verifyEmail = asyncHandler(async (req, res, next) => {
   try {
+    const { token } = req.validated.body;
+
     logger.info("Email verification attempt");
 
-    // TODO: Implement email verification logic (will be implemented in Task 18.1)
-    // For now, return success response
+    // Hash the provided token to match stored hash
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
+    // Find user with valid verification token
+    /** @type {UserDocument | null} */
+    const user = await User.findOne({
+      emailVerificationToken: hashedToken,
+      emailVerificationExpiry: { $gt: Date.now() }, // Token not expired
+    }).select("+emailVerificationToken +emailVerificationExpiry");
+
+    if (!user) {
+      throw new CustomError(
+        "Invalid or expired email verification token",
+        HTTP_STATUS.BAD_REQUEST,
+        ERROR_CODES.VALIDATION_ERROR
+      );
+    }
+
+    // Check if email is already verified
+    if (user.isEmailVerified) {
+      logger.info("Email already verified", {
+        userId: user._id,
+        email: user.email,
+      });
+
+      return res
+        .status(HTTP_STATUS.OK)
+        .json(
+          formatSuccessResponse(
+            null,
+            "Email is already verified. You can login to your account"
+          )
+        );
+    }
+
+    // Mark email as verified and clear verification token
+    user.clearEmailVerificationToken();
+
+    await user.save();
+
+    logger.info("Email verification successful", {
+      userId: user._id,
+      email: user.email,
+    });
+
+    // Return success response
     return res
       .status(HTTP_STATUS.OK)
-      .json(formatSuccessResponse(null, "Email verification successful"));
+      .json(
+        formatSuccessResponse(
+          null,
+          "Email verification successful. You can now login to your account"
+        )
+      );
   } catch (error) {
     logger.error("Email verification failed", {
       error: error.message,
     });
     next(error);
   }
-};
+});
 
 export default {
   register,

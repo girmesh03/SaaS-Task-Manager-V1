@@ -79,11 +79,11 @@ if (process.env.NODE_ENV === "development") {
 app.use(
   compression({
     threshold: 1024,
-    filter: (req, res) => {
+    filter: (req, _res) => {
       if (req.headers["x-no-compression"]) {
         return false;
       }
-      return compression.filter(req, res);
+      return compression.filter(req, _res);
     },
   })
 );

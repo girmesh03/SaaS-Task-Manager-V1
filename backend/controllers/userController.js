@@ -1,3 +1,4 @@
+import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
 import { User } from "../models/index.js";
 import CustomError from "../errorHandler/CustomError.js";
@@ -9,6 +10,7 @@ import {
   escapeRegex,
   safeAbortTransaction,
 } from "../utils/helpers.js";
+import { emitToOrganization } from "../utils/socketEmitter.js";
 
 /**
  * @typedef {Object} UserDocument
@@ -205,7 +207,7 @@ const handleCascadeResult = (cascadeResult, operation, userId, logger) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getAllUsers = async (req, res, next) => {
+export const getAllUsers = asyncHandler(async (req, res, next) => {
   try {
     const { organization: userOrganization } = req.user;
 
@@ -328,7 +330,7 @@ export const getAllUsers = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Get user by ID
@@ -340,7 +342,7 @@ export const getAllUsers = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getUserById = async (req, res, next) => {
+export const getUserById = asyncHandler(async (req, res, next) => {
   try {
     const { userId } = req.params;
 
@@ -381,7 +383,7 @@ export const getUserById = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Create new user
@@ -395,7 +397,7 @@ export const getUserById = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const createUser = async (req, res, next) => {
+export const createUser = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -437,7 +439,8 @@ export const createUser = async (req, res, next) => {
       resourceType: "USER",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization("user:created", { user }, user.organization);
 
     // Return success response
     return res
@@ -456,7 +459,7 @@ export const createUser = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Update user
@@ -470,7 +473,7 @@ export const createUser = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const updateUser = async (req, res, next) => {
+export const updateUser = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -516,7 +519,8 @@ export const updateUser = async (req, res, next) => {
       resourceType: "USER",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization("user:updated", { user }, user.organization);
 
     // Return success response
     return res
@@ -536,7 +540,7 @@ export const updateUser = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Soft delete user with cascade operations
@@ -548,7 +552,7 @@ export const updateUser = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const deleteUser = async (req, res, next) => {
+export const deleteUser = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -604,7 +608,12 @@ export const deleteUser = async (req, res, next) => {
       resourceType: "USER",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "user:deleted",
+      { userId, deletedCount: cascadeResult.deletedCount },
+      user.organization
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -631,7 +640,7 @@ export const deleteUser = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Restore soft-deleted user with cascade operations
@@ -643,7 +652,7 @@ export const deleteUser = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const restoreUser = async (req, res, next) => {
+export const restoreUser = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -688,7 +697,12 @@ export const restoreUser = async (req, res, next) => {
       resourceType: "USER",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "user:restored",
+      { userId, restoredCount: cascadeResult.restoredCount },
+      user.organization
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -715,7 +729,7 @@ export const restoreUser = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Change user password
@@ -728,7 +742,7 @@ export const restoreUser = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const changePassword = async (req, res, next) => {
+export const changePassword = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -779,7 +793,12 @@ export const changePassword = async (req, res, next) => {
       resourceType: "USER",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "user:password-changed",
+      { userId: user._id },
+      user.organization
+    );
 
     // Return success response
     return res
@@ -799,7 +818,7 @@ export const changePassword = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Change user email
@@ -812,7 +831,7 @@ export const changePassword = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const changeEmail = async (req, res, next) => {
+export const changeEmail = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -858,7 +877,12 @@ export const changeEmail = async (req, res, next) => {
     });
 
     // TODO: Send email verification to new email (will be implemented in Task 18.1)
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "user:email-changed",
+      { userId: user._id, oldEmail, newEmail },
+      user.organization
+    );
 
     // Return success response
     return res
@@ -883,7 +907,7 @@ export const changeEmail = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Upload user avatar
@@ -895,7 +919,7 @@ export const changeEmail = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const uploadAvatar = async (req, res, next) => {
+export const uploadAvatar = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -941,7 +965,8 @@ export const uploadAvatar = async (req, res, next) => {
       resourceType: "USER",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization("user:avatar-updated", { user }, user.organization);
 
     // Return success response
     return res
@@ -961,7 +986,7 @@ export const uploadAvatar = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 export default {
   getAllUsers,

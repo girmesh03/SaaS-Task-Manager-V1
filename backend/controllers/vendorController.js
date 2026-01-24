@@ -1,3 +1,4 @@
+import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
 import { Vendor } from "../models/index.js";
 import CustomError from "../errorHandler/CustomError.js";
@@ -16,6 +17,7 @@ import {
   findResourceById,
   handleCascadeResult,
 } from "../utils/controllerHelpers.js";
+import { emitToOrganization } from "../utils/socketEmitter.js";
 
 /**
  * Vendor Controller
@@ -55,7 +57,7 @@ import {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getAllVendors = async (req, res, next) => {
+export const getAllVendors = asyncHandler(async (req, res, next) => {
   try {
     const { organization: userOrganization } = req.user;
 
@@ -180,7 +182,7 @@ export const getAllVendors = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Get vendor by ID
@@ -192,7 +194,7 @@ export const getAllVendors = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getVendorById = async (req, res, next) => {
+export const getVendorById = asyncHandler(async (req, res, next) => {
   try {
     const { vendorId } = req.params;
 
@@ -248,7 +250,7 @@ export const getVendorById = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Create new vendor
@@ -261,7 +263,7 @@ export const getVendorById = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const createVendor = async (req, res, next) => {
+export const createVendor = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -311,7 +313,8 @@ export const createVendor = async (req, res, next) => {
       resourceType: "VENDOR",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization("vendor:created", { vendor }, vendor.organization);
 
     // Return success response
     return res
@@ -330,7 +333,7 @@ export const createVendor = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Update vendor
@@ -343,7 +346,7 @@ export const createVendor = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const updateVendor = async (req, res, next) => {
+export const updateVendor = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -400,7 +403,8 @@ export const updateVendor = async (req, res, next) => {
       resourceType: "VENDOR",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization("vendor:updated", { vendor }, vendor.organization);
 
     // Return success response
     return res
@@ -420,7 +424,7 @@ export const updateVendor = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Soft delete vendor with cascade operations
@@ -433,7 +437,7 @@ export const updateVendor = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const deleteVendor = async (req, res, next) => {
+export const deleteVendor = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -491,7 +495,12 @@ export const deleteVendor = async (req, res, next) => {
       resourceType: "VENDOR",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "vendor:deleted",
+      { vendorId, deletedCount: cascadeResult.deletedCount },
+      vendor.organization
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -518,7 +527,7 @@ export const deleteVendor = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Restore soft-deleted vendor with cascade operations
@@ -531,7 +540,7 @@ export const deleteVendor = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const restoreVendor = async (req, res, next) => {
+export const restoreVendor = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -579,7 +588,12 @@ export const restoreVendor = async (req, res, next) => {
       resourceType: "VENDOR",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "vendor:restored",
+      { vendorId, restoredCount: cascadeResult.restoredCount },
+      vendor.organization
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -606,7 +620,7 @@ export const restoreVendor = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 export default {
   getAllVendors,

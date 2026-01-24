@@ -1,3 +1,4 @@
+import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
 import { Department } from "../models/index.js";
 import CustomError from "../errorHandler/CustomError.js";
@@ -9,6 +10,7 @@ import {
   escapeRegex,
   safeAbortTransaction,
 } from "../utils/helpers.js";
+import { emitToOrganization } from "../utils/socketEmitter.js";
 
 /**
  * @typedef {Object} DepartmentDocument
@@ -72,7 +74,7 @@ const DEPARTMENT_SELECT_FIELDS =
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getAllDepartments = async (req, res, next) => {
+export const getAllDepartments = asyncHandler(async (req, res, next) => {
   try {
     const { organization: userOrganization } = req.user;
 
@@ -167,7 +169,7 @@ export const getAllDepartments = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Get department by ID
@@ -179,7 +181,7 @@ export const getAllDepartments = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getDepartmentById = async (req, res, next) => {
+export const getDepartmentById = asyncHandler(async (req, res, next) => {
   try {
     const { departmentId } = req.params;
     const { organization: userOrganization } = req.user;
@@ -241,7 +243,7 @@ export const getDepartmentById = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Create new department
@@ -254,7 +256,7 @@ export const getDepartmentById = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const createDepartment = async (req, res, next) => {
+export const createDepartment = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -299,7 +301,12 @@ export const createDepartment = async (req, res, next) => {
       resourceType: "DEPARTMENT",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "department:created",
+      { department },
+      department.organization
+    );
 
     // Return success response
     return res
@@ -320,7 +327,7 @@ export const createDepartment = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Update department
@@ -333,7 +340,7 @@ export const createDepartment = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const updateDepartment = async (req, res, next) => {
+export const updateDepartment = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -403,7 +410,12 @@ export const updateDepartment = async (req, res, next) => {
       resourceType: "DEPARTMENT",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "department:updated",
+      { department },
+      department.organization
+    );
 
     // Return success response
     return res
@@ -425,7 +437,7 @@ export const updateDepartment = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Soft delete department with cascade operations
@@ -437,7 +449,7 @@ export const updateDepartment = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const deleteDepartment = async (req, res, next) => {
+export const deleteDepartment = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -535,7 +547,12 @@ export const deleteDepartment = async (req, res, next) => {
       resourceType: "DEPARTMENT",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "department:deleted",
+      { departmentId, deletedCount: cascadeResult.deletedCount },
+      department.organization
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -562,7 +579,7 @@ export const deleteDepartment = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Restore soft-deleted department with cascade operations
@@ -574,7 +591,7 @@ export const deleteDepartment = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const restoreDepartment = async (req, res, next) => {
+export const restoreDepartment = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -673,7 +690,12 @@ export const restoreDepartment = async (req, res, next) => {
       resourceType: "DEPARTMENT",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitToOrganization(
+      "department:restored",
+      { departmentId, restoredCount: cascadeResult.restoredCount },
+      department.organization
+    );
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -700,7 +722,7 @@ export const restoreDepartment = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 export default {
   getAllDepartments,

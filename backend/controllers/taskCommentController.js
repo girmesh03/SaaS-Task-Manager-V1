@@ -1,3 +1,4 @@
+import asyncHandler from "express-async-handler";
 import mongoose from "mongoose";
 import { TaskComment } from "../models/index.js";
 import CustomError from "../errorHandler/CustomError.js";
@@ -22,6 +23,15 @@ import {
   findResourceById,
   handleCascadeResult,
 } from "../utils/controllerHelpers.js";
+import {
+  emitCommentAdded,
+  emitCommentUpdated,
+  emitCommentDeleted,
+} from "../utils/socketEmitter.js";
+import {
+  createCommentNotification,
+  createMentionNotification,
+} from "../services/notificationService.js";
 
 /**
  * TaskComment Controller
@@ -64,7 +74,7 @@ import {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getAllTaskComments = async (req, res, next) => {
+export const getAllTaskComments = asyncHandler(async (req, res, next) => {
   try {
     const {
       organization: userOrganization,
@@ -216,7 +226,7 @@ export const getAllTaskComments = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Get task comment by ID
@@ -228,7 +238,7 @@ export const getAllTaskComments = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const getTaskCommentById = async (req, res, next) => {
+export const getTaskCommentById = asyncHandler(async (req, res, next) => {
   try {
     const { taskCommentId } = req.params;
 
@@ -299,7 +309,7 @@ export const getTaskCommentById = async (req, res, next) => {
     });
     next(error);
   }
-};
+});
 
 /**
  * Create new task comment
@@ -313,7 +323,7 @@ export const getTaskCommentById = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const createTaskComment = async (req, res, next) => {
+export const createTaskComment = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -368,7 +378,54 @@ export const createTaskComment = async (req, res, next) => {
       resourceType: "TASK_COMMENT",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    const recipientIds = comment.mentions || [];
+    emitCommentAdded(comment, comment.organization, recipientIds);
+
+    // Create notification for comment added
+    if (comment.parent && comment.parentModel) {
+      const parentTitle =
+        comment.parent.title ||
+        comment.parent.activity ||
+        comment.parent.comment ||
+        "Unknown";
+      const commentPreview = comment.comment.substring(0, 100);
+
+      await createCommentNotification({
+        commentId: comment._id,
+        parentId: comment.parent._id || comment.parent,
+        parentModel: comment.parentModel,
+        parentTitle,
+        recipientIds,
+        commentedBy: userId,
+        commentedByName: `${req.user.firstName} ${req.user.lastName}`,
+        commentPreview,
+        organizationId: comment.organization,
+        departmentId: comment.department,
+      });
+    }
+
+    // Create notification for mentions
+    if (comment.mentions && comment.mentions.length > 0) {
+      const entityTitle =
+        comment.parent?.title ||
+        comment.parent?.activity ||
+        comment.parent?.comment ||
+        "Unknown";
+      const contextPreview = comment.comment.substring(0, 100);
+
+      await createMentionNotification({
+        entityId: comment._id,
+        entityModel: "TaskComment",
+        entityTitle,
+        mentionedUserIds: comment.mentions.map((m) => m._id || m),
+        mentionedBy: userId,
+        mentionedByName: `${req.user.firstName} ${req.user.lastName}`,
+        contextPreview,
+        organizationId: comment.organization,
+        departmentId: comment.department,
+      });
+    }
 
     // Return success response
     return res
@@ -389,7 +446,7 @@ export const createTaskComment = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Update task comment
@@ -403,7 +460,7 @@ export const createTaskComment = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const updateTaskComment = async (req, res, next) => {
+export const updateTaskComment = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -482,7 +539,8 @@ export const updateTaskComment = async (req, res, next) => {
       resourceType: "TASK_COMMENT",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitCommentUpdated(comment, comment.organization);
 
     // Return success response
     return res
@@ -504,7 +562,7 @@ export const updateTaskComment = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Soft delete task comment with cascade operations
@@ -517,7 +575,7 @@ export const updateTaskComment = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const deleteTaskComment = async (req, res, next) => {
+export const deleteTaskComment = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -581,7 +639,8 @@ export const deleteTaskComment = async (req, res, next) => {
       resourceType: "TASK_COMMENT",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitCommentDeleted(taskCommentId, comment.organization);
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -608,7 +667,7 @@ export const deleteTaskComment = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 /**
  * Restore soft-deleted task comment with cascade operations
@@ -621,7 +680,7 @@ export const deleteTaskComment = async (req, res, next) => {
  * @param {import('express').Response} res - Express response object
  * @param {import('express').NextFunction} next - Express next function
  */
-export const restoreTaskComment = async (req, res, next) => {
+export const restoreTaskComment = asyncHandler(async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -679,7 +738,8 @@ export const restoreTaskComment = async (req, res, next) => {
       resourceType: "TASK_COMMENT",
     });
 
-    // TODO: Emit Socket.IO event for real-time updates (will be implemented in Task 19.2)
+    // Emit Socket.IO event for real-time updates
+    emitCommentUpdated(comment, comment.organization);
 
     // Return success response
     return res.status(HTTP_STATUS.OK).json(
@@ -706,7 +766,7 @@ export const restoreTaskComment = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-};
+});
 
 export default {
   getAllTaskComments,
