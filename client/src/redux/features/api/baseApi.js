@@ -1,5 +1,4 @@
 import { createApi, fetchBaseQuery, retry } from "@reduxjs/toolkit/query/react";
-import { setCredentials, clearCredentials } from "../authSlice";
 import { logError, getUserFriendlyMessage } from "../../../utils/errorHandler";
 import { toast } from "react-toastify";
 
@@ -12,9 +11,15 @@ import { toast } from "react-toastify";
  * Requirements: 23.3, 23.4, 23.5, 24.3, 24.5
  */
 
-// Get API base URL from environment
+// Constants
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
+const LOGIN_ROUTE = "/login";
+const LOGOUT_REDIRECT_DELAY_MS = 1000;
+const TOAST_AUTO_CLOSE_MS = 2000;
+
+// Prevent multiple simultaneous redirects
+let isRedirecting = false;
 
 // Create base query with credentials (cookies)
 const baseQuery = fetchBaseQuery({
@@ -35,6 +40,8 @@ const baseQuery = fetchBaseQuery({
  * Handles 403 errors with user-friendly toast notifications
  * Prevents infinite refresh loops by bypassing reauth for refresh endpoint
  *
+ * CRITICAL: Only logout user when token refresh FAILS, not on every 401
+ *
  * @param {Object} args - Request arguments
  * @param {Object} api - RTK Query API object
  * @param {Object} extraOptions - Additional options
@@ -50,40 +57,88 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 
   // Handle 401 errors (authentication failure)
   if (result.error?.status === 401) {
-    // Log error
-    logError(result.error, "API - Authentication Error (401)");
-
-    // Try to refresh token
-    const refreshResult = await baseQuery(
-      { url: "/auth/refresh", method: "POST" },
-      api,
-      extraOptions
+    logError(
+      result.error,
+      "API - Authentication Error (401) - Attempting token refresh"
     );
 
-    if (refreshResult.data?.data?.user) {
-      // Token refresh successful - update user data in Redux
-      api.dispatch(setCredentials({ user: refreshResult.data.data.user }));
+    try {
+      // Import auth actions dynamically to avoid circular dependency
+      const { setCredentials, clearCredentials } = await import("../authSlice");
 
-      // Retry original request
-      result = await baseQuery(args, api, extraOptions);
-    } else {
-      // Token refresh failed - logout user
-      api.dispatch(clearCredentials());
+      // Try to refresh token
+      const refreshResult = await baseQuery(
+        { url: "/auth/refresh", method: "POST" },
+        api,
+        extraOptions
+      );
 
-      // Show toast notification
-      toast.error(getUserFriendlyMessage(result.error));
+      if (refreshResult.data?.data?.user) {
+        // Token refresh successful - update user data in Redux
+        console.log(
+          "[baseApi] Token refresh successful, retrying original request"
+        );
 
-      // Redirect to login page
-      window.location.href = "/login";
+        api.dispatch(setCredentials({ user: refreshResult.data.data.user }));
+
+        // Retry original request
+        result = await baseQuery(args, api, extraOptions);
+      } else {
+        // Token refresh failed - NOW logout user
+        logError(
+          new Error("Token refresh failed"),
+          "API - Token Refresh Failed - Logging out user",
+          { refreshResult }
+        );
+
+        // Prevent multiple redirects
+        if (!isRedirecting) {
+          isRedirecting = true;
+
+          api.dispatch(clearCredentials());
+
+          // Show toast notification with callback
+          toast.error("Your session has expired. Please login again.", {
+            autoClose: TOAST_AUTO_CLOSE_MS,
+            onClose: () => {
+              window.location.href = LOGIN_ROUTE;
+            },
+          });
+        }
+
+        // Return error immediately to prevent retries
+        return {
+          error: {
+            status: 401,
+            data: { message: "Session expired" },
+          },
+        };
+      }
+    } catch (importError) {
+      // Handle dynamic import failure
+      logError(importError, "API - Failed to import authSlice");
+
+      // Fallback: force logout
+      if (!isRedirecting) {
+        isRedirecting = true;
+        toast.error("An error occurred. Please login again.");
+        setTimeout(() => {
+          window.location.href = LOGIN_ROUTE;
+        }, LOGOUT_REDIRECT_DELAY_MS);
+      }
+
+      return {
+        error: {
+          status: 500,
+          data: { message: "Internal error" },
+        },
+      };
     }
   }
 
   // Handle 403 errors (authorization failure)
   if (result.error?.status === 403) {
-    // Log error
     logError(result.error, "API - Authorization Error (403)");
-
-    // Show toast notification (do NOT logout user)
     toast.error(getUserFriendlyMessage(result.error));
   }
 

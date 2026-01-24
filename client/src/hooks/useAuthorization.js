@@ -9,8 +9,7 @@
  */
 
 import { useMemo } from "react";
-import { useSelector } from "react-redux";
-import { selectCurrentUser } from "../redux/features/authSlice";
+import useAuth from "./useAuth";
 import {
   getPermissions,
   canPerformOperation,
@@ -45,8 +44,8 @@ import {
  * @returns {boolean} return.canAccessCrossDept - True if user can access cross-dept resources
  */
 const useAuthorization = (resource) => {
-  // Get current user from Redux
-  const user = useSelector(selectCurrentUser);
+  // Get current user from useAuth hook
+  const { user } = useAuth();
 
   // Memoize permissions to avoid recalculation on every render
   const permissions = useMemo(() => {

@@ -1,3 +1,7 @@
+/**
+ * Home Page Component
+ * Landing page
+ */
 const Home = () => {
   return <div>Home</div>;
 };
