@@ -4,6 +4,7 @@
  */
 
 import { forwardRef } from "react";
+import PropTypes from "prop-types";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
@@ -92,5 +93,18 @@ const MuiDialog = forwardRef(
 );
 
 MuiDialog.displayName = "MuiDialog";
+
+MuiDialog.propTypes = {
+  open: PropTypes.bool.isRequired,
+  onClose: PropTypes.func,
+  title: PropTypes.node,
+  children: PropTypes.node,
+  actions: PropTypes.node,
+  maxWidth: PropTypes.oneOf(["xs", "sm", "md", "lg", "xl", false]),
+  fullWidth: PropTypes.bool,
+  fullScreen: PropTypes.bool,
+  showCloseButton: PropTypes.bool,
+  TransitionComponent: PropTypes.elementType,
+};
 
 export default MuiDialog;

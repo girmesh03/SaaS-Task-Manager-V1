@@ -4,6 +4,7 @@
  */
 
 import { forwardRef } from "react";
+import PropTypes from "prop-types";
 import Pagination from "@mui/material/Pagination";
 
 const MuiPagination = forwardRef(
@@ -45,5 +46,19 @@ const MuiPagination = forwardRef(
 );
 
 MuiPagination.displayName = "MuiPagination";
+
+MuiPagination.propTypes = {
+  count: PropTypes.number.isRequired,
+  page: PropTypes.number.isRequired,
+  onChange: PropTypes.func.isRequired,
+  color: PropTypes.oneOf(["primary", "secondary", "standard"]),
+  shape: PropTypes.oneOf(["circular", "rounded"]),
+  variant: PropTypes.oneOf(["text", "outlined"]),
+  showFirstButton: PropTypes.bool,
+  showLastButton: PropTypes.bool,
+  size: PropTypes.oneOf(["small", "medium", "large"]),
+  renderItem: PropTypes.func,
+  sx: PropTypes.object,
+};
 
 export default MuiPagination;

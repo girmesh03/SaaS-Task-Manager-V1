@@ -4,6 +4,7 @@
  */
 
 import { forwardRef } from "react";
+import PropTypes from "prop-types";
 import CircularProgress from "@mui/material/CircularProgress";
 import LinearProgress from "@mui/material/LinearProgress";
 import Box from "@mui/material/Box";
@@ -127,5 +128,26 @@ const MuiProgress = forwardRef(
 );
 
 MuiProgress.displayName = "MuiProgress";
+
+MuiProgress.propTypes = {
+  type: PropTypes.oneOf(["circular", "linear"]),
+  value: PropTypes.number,
+  variant: PropTypes.oneOf(["determinate", "indeterminate", "buffer", "query"]),
+  color: PropTypes.oneOf([
+    "primary",
+    "secondary",
+    "error",
+    "info",
+    "success",
+    "warning",
+    "inherit",
+  ]),
+  size: PropTypes.number,
+  thickness: PropTypes.number,
+  showLabel: PropTypes.bool,
+  labelProps: PropTypes.object,
+  sx: PropTypes.object,
+  containerSx: PropTypes.object,
+};
 
 export default MuiProgress;

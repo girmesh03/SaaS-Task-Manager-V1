@@ -4,6 +4,7 @@
  */
 
 import { forwardRef } from "react";
+import PropTypes from "prop-types";
 import Timeline from "@mui/lab/Timeline";
 import TimelineItem from "@mui/lab/TimelineItem";
 import TimelineSeparator from "@mui/lab/TimelineSeparator";
@@ -52,5 +53,34 @@ const MuiTimeline = forwardRef(
 );
 
 MuiTimeline.displayName = "MuiTimeline";
+
+MuiTimeline.propTypes = {
+  items: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      content: PropTypes.node.isRequired,
+      oppositeContent: PropTypes.node,
+      dotColor: PropTypes.oneOf([
+        "grey",
+        "inherit",
+        "primary",
+        "secondary",
+        "error",
+        "info",
+        "success",
+        "warning",
+      ]),
+      dotVariant: PropTypes.oneOf(["filled", "outlined"]),
+      icon: PropTypes.node,
+    })
+  ),
+  position: PropTypes.oneOf([
+    "left",
+    "right",
+    "alternate",
+    "alternate-reverse",
+  ]),
+  sx: PropTypes.object,
+};
 
 export default MuiTimeline;

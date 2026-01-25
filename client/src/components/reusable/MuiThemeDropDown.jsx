@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import { useState, memo } from "react";
+import PropTypes from "prop-types";
 import { useColorScheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
@@ -8,7 +9,7 @@ import MenuItem from "@mui/material/MenuItem";
 import DarkModeIcon from "@mui/icons-material/DarkModeRounded";
 import LightModeIcon from "@mui/icons-material/LightModeRounded";
 
-const MuiThemeDropDown = (props) => {
+const MuiThemeDropDown = memo((props) => {
   const { mode, systemMode, setMode } = useColorScheme();
   const [anchorEl, setAnchorEl] = useState(null);
   const open = Boolean(anchorEl);
@@ -54,7 +55,7 @@ const MuiThemeDropDown = (props) => {
   }[resolvedMode];
 
   return (
-    <React.Fragment>
+    <>
       <IconButton
         data-screenshot="toggle-mode"
         onClick={handleClick}
@@ -65,7 +66,8 @@ const MuiThemeDropDown = (props) => {
         aria-expanded={open ? "true" : undefined}
         sx={{
           border: "none",
-          bgcolor: (theme) => (open ? theme.palette.action.selected : "transparent"),
+          bgcolor: (theme) =>
+            open ? theme.palette.action.selected : "transparent",
           transition: "all 0.2s",
           p: 1,
           "&:hover": {
@@ -124,26 +126,61 @@ const MuiThemeDropDown = (props) => {
         anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
       >
         <MenuItem selected={mode === "system"} onClick={handleMode("system")}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, width: "100%" }}>
-            <Box sx={{ fontSize: "1.1rem", display: "flex", opacity: 0.8 }}>🌓</Box>
-            <Typography variant="body2" sx={{ fontWeight: 500 }}>System</Typography>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1.5,
+              width: "100%",
+            }}
+          >
+            <Box sx={{ fontSize: "1.1rem", display: "flex", opacity: 0.8 }}>
+              🌓
+            </Box>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              System
+            </Typography>
           </Box>
         </MenuItem>
         <MenuItem selected={mode === "light"} onClick={handleMode("light")}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, width: "100%" }}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1.5,
+              width: "100%",
+            }}
+          >
             <LightModeIcon fontSize="small" sx={{ opacity: 0.8 }} />
-            <Typography variant="body2" sx={{ fontWeight: 500 }}>Light</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              Light
+            </Typography>
           </Box>
         </MenuItem>
         <MenuItem selected={mode === "dark"} onClick={handleMode("dark")}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, width: "100%" }}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1.5,
+              width: "100%",
+            }}
+          >
             <DarkModeIcon fontSize="small" sx={{ opacity: 0.8 }} />
-            <Typography variant="body2" sx={{ fontWeight: 500 }}>Dark</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              Dark
+            </Typography>
           </Box>
         </MenuItem>
       </Menu>
-    </React.Fragment>
+    </>
   );
+});
+
+MuiThemeDropDown.displayName = "MuiThemeDropDown";
+
+MuiThemeDropDown.propTypes = {
+  // Accepts any additional props to pass to IconButton
 };
 
 export default MuiThemeDropDown;
