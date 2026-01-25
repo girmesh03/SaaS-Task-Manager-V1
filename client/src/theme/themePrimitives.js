@@ -230,3 +230,13 @@ const defaultShadows = [
 ];
 
 export const shadows = defaultShadows;
+
+/**
+ * Layout Configuration
+ * @readonly
+ */
+export const layoutConfig = {
+  drawerWidth: 240,
+  headerHeight: 64,
+  mobileBreakpoint: "md",
+};

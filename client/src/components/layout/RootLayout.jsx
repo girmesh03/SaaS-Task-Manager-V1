@@ -2,12 +2,15 @@
  * RootLayout Component
  * Root layout component that wraps all pages (public and authenticated)
  * Provides toast notifications and ErrorBoundary for all routes
- * Does NOT manage socket connections (handled by AuthenticatedLayout)
+ * Does NOT manage socket connections (handled by ProtectedRoutes)
+ *
+ * Flow: RootLayout → ProtectedRoutes → DashboardLayout → Outlet
  *
  * Requirements: 24.6
  */
 
 import { Outlet } from "react-router";
+import Box from "@mui/material/Box";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { ErrorBoundary } from "../common";
@@ -18,7 +21,15 @@ import { ErrorBoundary } from "../common";
  */
 const RootLayout = () => {
   return (
-    <>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        minHeight: "100vh",
+        width: "100%",
+        overflow: "hidden",
+      }}
+    >
       {/* Toast notifications */}
       <ToastContainer
         position="top-right"
@@ -41,7 +52,7 @@ const RootLayout = () => {
       >
         <Outlet />
       </ErrorBoundary>
-    </>
+    </Box>
   );
 };
 

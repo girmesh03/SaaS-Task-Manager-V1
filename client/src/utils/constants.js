@@ -749,6 +749,12 @@ export const SEARCH_VALIDATION = {
   },
 };
 
+/**
+ * Application Version
+ * @readonly
+ */
+export const APP_VERSION = "1.0.0";
+
 export default {
   TASK_STATUS,
   TASK_PRIORITY,
@@ -800,4 +806,5 @@ export default {
   SEARCH_VALIDATION,
   INDUSTRIES,
   INDUSTRIES_SIZE,
+  APP_VERSION,
 };

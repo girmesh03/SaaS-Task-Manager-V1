@@ -1,8 +1,12 @@
 /**
- * AuthenticatedLayout Component
- * Layout component for authenticated routes only
- * Manages Socket.IO connection based on authentication state
+ * ProtectedRoutes Component
+ * Protects routes that require authentication
+ * Manages Socket.IO connection for authenticated users
  * Redirects to login if not authenticated
+ *
+ * Flow: RootLayout → ProtectedRoutes → DashboardLayout → Outlet
+ *
+ * Requirements: 24.6, 18.1, 18.2
  */
 
 import { useEffect, useCallback, useRef } from "react";
@@ -28,7 +32,7 @@ const SOCKET_STATUS_LOGS = {
   reconnected: { level: "info", message: "Socket reconnected" },
 };
 
-const AuthenticatedLayout = () => {
+const ProtectedRoutes = () => {
   const { user, isAuthenticated } = useAuth();
   const isInitializingRef = useRef(false);
 
@@ -41,11 +45,11 @@ const AuthenticatedLayout = () => {
 
     if (logConfig) {
       logger[logConfig.level](
-        `[AuthenticatedLayout] ${logConfig.message}`,
+        `[ProtectedRoutes] ${logConfig.message}`,
         data ? { data } : undefined
       );
     } else {
-      logger.debug("[AuthenticatedLayout] Socket status change", {
+      logger.debug("[ProtectedRoutes] Socket status change", {
         status,
         data,
       });
@@ -65,34 +69,28 @@ const AuthenticatedLayout = () => {
     isInitializingRef.current = true;
 
     try {
-      logger.info(
-        "[AuthenticatedLayout] User authenticated, connecting socket",
-        {
-          userId: user._id,
-          email: user.email,
-        }
-      );
+      logger.info("[ProtectedRoutes] User authenticated, connecting socket", {
+        userId: user._id,
+        email: user.email,
+      });
 
       socketService.onStatusChange(handleSocketStatusChange);
       socketService.connect(user);
       initializeSocketEventHandlers(socketService, store);
     } catch (error) {
-      logger.error("[AuthenticatedLayout] Failed to initialize socket", error);
+      logger.error("[ProtectedRoutes] Failed to initialize socket", error);
       isInitializingRef.current = false;
     }
 
     return () => {
       try {
-        logger.info("[AuthenticatedLayout] Cleaning up socket");
+        logger.info("[ProtectedRoutes] Cleaning up socket");
         socketService.offStatusChange(handleSocketStatusChange);
         cleanupSocketEventHandlers(socketService);
         socketService.disconnect();
         socketService.cleanup();
       } catch (error) {
-        logger.error(
-          "[AuthenticatedLayout] Error during socket cleanup",
-          error
-        );
+        logger.error("[ProtectedRoutes] Error during socket cleanup", error);
       } finally {
         isInitializingRef.current = false;
       }
@@ -100,14 +98,15 @@ const AuthenticatedLayout = () => {
   }, [isAuthenticated, user, handleSocketStatusChange]);
 
   // Redirect to login if not authenticated
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user) {
     logger.warn(
-      "[AuthenticatedLayout] User not authenticated, redirecting to login"
+      "[ProtectedRoutes] User not authenticated, redirecting to login"
     );
     return <Navigate to="/login" replace />;
   }
 
+  // Render children (DashboardLayout)
   return <Outlet />;
 };
 
-export default AuthenticatedLayout;
+export default ProtectedRoutes;
