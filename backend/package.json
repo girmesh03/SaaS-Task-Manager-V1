@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "server": "nodemon server.js",
     "seed": "node mock/seed.js",
+    "wipe": "node mock/wipe.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

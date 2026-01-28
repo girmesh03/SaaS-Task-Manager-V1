@@ -165,7 +165,7 @@ const DrawerContent = memo(
                 display: "flex",
                 justifyContent: "center",
                 alignItems: "center",
-                minHeight: 40,
+                minHeight: 56,
               }}
             >
               <MuiLoading size={24} />
@@ -186,9 +186,10 @@ const DrawerContent = memo(
               isOptionEqualToValue={(option, value) =>
                 option?._id === value?._id
               }
+              label="Department"
               placeholder="Select Department"
               size="small"
-              disabled
+              disabled={departments.length <= 1}
               disableClearable
               fullWidth
               slotProps={{
@@ -196,18 +197,6 @@ const DrawerContent = memo(
                   placement: "bottom-start",
                 },
               }}
-              renderInput={(params) => (
-                <Box {...params}>
-                  {params.children}
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ mt: 0.5, display: "block" }}
-                  >
-                    Department switching coming soon
-                  </Typography>
-                </Box>
-              )}
             />
           )}
         </Box>
@@ -253,7 +242,6 @@ const DrawerContent = memo(
                     aria-current={active ? "page" : undefined}
                     sx={{
                       borderRadius: 1,
-                      minHeight: 48,
                       px: 2,
                       "&.Mui-selected": {
                         bgcolor: "primary.light",
@@ -359,7 +347,16 @@ const Sidebar = memo(({ open, onClose }) => {
   );
 
   // Current department - default to user's department
-  const currentDepartment = user?.department;
+  const currentDepartment = useMemo(() => {
+    // If departments are loaded and user has a department, find it in the list
+    if (departments.length > 0 && user?.department?._id) {
+      return (
+        departments.find((dept) => dept._id === user.department._id) ||
+        user.department
+      );
+    }
+    return user?.department || null;
+  }, [departments, user]);
 
   // Filter navigation items based on user role - memoized for performance
   const navigationItems = useMemo(() => {
@@ -384,16 +381,31 @@ const Sidebar = memo(({ open, onClose }) => {
   );
 
   // Handle department change - memoized to prevent re-renders
-  const handleDepartmentChange = useCallback((_event, newValue) => {
-    if (newValue) {
-      // Department switching is not implemented in this phase
-      // This feature will be added in a future task
-      logger.info("[Sidebar] Department switch requested", {
-        departmentId: newValue._id,
-        departmentName: newValue.name,
-      });
-    }
-  }, []);
+  const handleDepartmentChange = useCallback(
+    (_event, newValue) => {
+      if (newValue && newValue._id !== currentDepartment?._id) {
+        logger.info("[Sidebar] Department switch requested", {
+          fromDepartmentId: currentDepartment?._id,
+          fromDepartmentName: currentDepartment?.name,
+          toDepartmentId: newValue._id,
+          toDepartmentName: newValue.name,
+        });
+
+        // TODO: Implement department switching logic
+        // This will require:
+        // 1. Update user context/state with new department
+        // 2. Invalidate relevant queries (tasks, materials, etc.)
+        // 3. Redirect to dashboard or refresh current page
+        // 4. Show success notification
+
+        // For now, just log the request
+        logger.warn(
+          "[Sidebar] Department switching not yet implemented - feature coming soon"
+        );
+      }
+    },
+    [currentDepartment]
+  );
 
   // Check if route is active - memoized to prevent re-renders
   const isActiveRoute = useCallback(

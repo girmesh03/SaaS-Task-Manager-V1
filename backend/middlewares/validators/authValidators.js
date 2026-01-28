@@ -3,6 +3,8 @@ import {
   USER_VALIDATION,
   ORGANIZATION_VALIDATION,
   DEPARTMENT_VALIDATION,
+  INDUSTRIES,
+  INDUSTRIES_SIZE,
 } from "../../utils/constants.js";
 import { User, Organization } from "../../models/index.js";
 
@@ -112,12 +114,16 @@ export const registerValidator = [
   body("organization.industry")
     .trim()
     .notEmpty()
-    .withMessage("Industry is required"),
+    .withMessage("Industry is required")
+    .isIn(Object.values(INDUSTRIES))
+    .withMessage("Invalid industry. Please select a valid industry type."),
 
   body("organization.size")
     .trim()
     .notEmpty()
-    .withMessage("Organization size is required"),
+    .withMessage("Organization size is required")
+    .isIn(Object.values(INDUSTRIES_SIZE))
+    .withMessage("Invalid organization size. Please select a valid size."),
 
   body("organization.description")
     .optional()
@@ -214,9 +220,8 @@ export const registerValidator = [
     ),
 
   body("user.employeeId")
+    .optional()
     .trim()
-    .notEmpty()
-    .withMessage("Employee ID is required")
     .matches(USER_VALIDATION.EMPLOYEE_ID.PATTERN)
     .withMessage("Employee ID must be a 4-digit number (0001-9999)"),
 
@@ -390,6 +395,20 @@ export const verifyEmailValidator = [
 ];
 
 /**
+ * Resend Verification Validator
+ * Validates email for resending verification
+ */
+export const resendVerificationValidator = [
+  body("email")
+    .trim()
+    .notEmpty()
+    .withMessage("Email is required")
+    .isEmail()
+    .withMessage("Please provide a valid email address")
+    .normalizeEmail({ gmail_remove_dots: false }),
+];
+
+/**
  * Change Password Validator
  * Validates password change request
  */
@@ -447,5 +466,6 @@ export default {
   forgotPasswordValidator,
   resetPasswordValidator,
   verifyEmailValidator,
+  resendVerificationValidator,
   changePasswordValidator,
 };

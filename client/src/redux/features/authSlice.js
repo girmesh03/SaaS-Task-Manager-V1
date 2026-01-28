@@ -82,7 +82,7 @@ export const authApi = baseApi.injectEndpoints({
      * @param {Object} credentials.organization - Organization data
      * @param {Object} credentials.department - Department data
      * @param {Object} credentials.user - User data
-     * @returns {Object} Created user and organization
+     * @returns {Object} Success message (no user data or tokens)
      */
     register: builder.mutation({
       query: (credentials) => ({
@@ -91,7 +91,8 @@ export const authApi = baseApi.injectEndpoints({
         body: credentials,
       }),
       invalidatesTags: ["Auth"],
-      onQueryStarted: handleAuthSuccess,
+      // No onQueryStarted - registration does NOT log user in
+      // User must verify email before logging in
     }),
 
     /**
@@ -199,6 +200,20 @@ export const authApi = baseApi.injectEndpoints({
         body: data,
       }),
     }),
+
+    /**
+     * Resend email verification link
+     * @param {Object} data - Email data
+     * @param {string} data.email - User email
+     * @returns {Object} Success message
+     */
+    resendVerification: builder.mutation({
+      query: (data) => ({
+        url: "/auth/resend-verification",
+        method: "POST",
+        body: data,
+      }),
+    }),
   }),
 });
 
@@ -211,4 +226,5 @@ export const {
   useForgotPasswordMutation,
   useResetPasswordMutation,
   useVerifyEmailMutation,
+  useResendVerificationMutation,
 } = authApi;

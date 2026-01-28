@@ -1,69 +1,86 @@
 /**
  * AuthLayout Component
  * Layout for public/authentication pages
- * Includes public header with logo, theme toggle, and main content area
+ * Includes public header with logo, theme toggle, and auth actions
  *
- * Flow: RootLayout → AuthLayout → Outlet
+ * Flow: RootLayout → PublicRoutes → AuthLayout → Outlet
  *
  * Features:
  * - Public header with logo and theme toggle
+ * - Login button for unauthenticated users
+ * - Logout button for authenticated users
  * - Main content area for page content
  * - Responsive design (mobile, tablet, desktop)
  * - Proper spacing and overflow handling
  * - No re-renders on header state changes
+ * - XL breakpoint centering for large screens
  *
  * Requirements: Public pages layout
  */
 
-import { memo, useCallback } from "react";
+import { memo, useCallback, useState } from "react";
+import PropTypes from "prop-types";
 import { Outlet, useNavigate } from "react-router";
+import { toast } from "react-toastify";
 import Box from "@mui/material/Box";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
+import Button from "@mui/material/Button";
+import IconButton from "@mui/material/IconButton";
+import Avatar from "@mui/material/Avatar";
+import Menu from "@mui/material/Menu";
 import TaskAltIcon from "@mui/icons-material/TaskAlt";
-import { MuiThemeDropDown } from "../reusable";
-import { useResponsive } from "../../hooks";
+import LoginIcon from "@mui/icons-material/Login";
+import { MuiThemeDropDown, MuiTooltip } from "../reusable";
+import { UserMenuItems } from "../common";
+import { useAuth, useResponsive } from "../../hooks";
+import { getUserInitials } from "../../utils/userHelpers";
+import logger from "../../utils/logger";
 
-// Toolbar height constants
+/**
+ * Toolbar height constants
+ * Used for consistent header height and content offset
+ */
 const TOOLBAR_HEIGHT = {
   xs: 56,
   sm: 64,
 };
 
-// Toolbar offset for content positioning (height / 8px spacing unit)
-const TOOLBAR_OFFSET = {
-  xs: 7, // 56px / 8 = 7
-  sm: 8, // 64px / 8 = 8
+/**
+ * Logo button styles - extracted for reusability and maintainability
+ */
+const logoButtonStyles = {
+  display: "flex",
+  alignItems: "center",
+  gap: 1,
+  cursor: "pointer",
+  border: "none",
+  background: "transparent",
+  p: 0,
+  "&:focus-visible": {
+    outline: "2px solid",
+    outlineColor: "primary.main",
+    outlineOffset: 2,
+    borderRadius: 1,
+  },
 };
 
 /**
  * LogoButton Component - Reusable logo button with navigation
  * @component
+ * @param {Object} props - Component props
+ * @param {Function} props.onClick - Click handler
+ * @param {Function} props.onKeyDown - Keyboard handler
+ * @param {boolean} props.isMobile - Mobile viewport flag
  */
-const LogoButton = memo(({ onClick, onKeyDown }) => {
-  const { isMobile } = useResponsive();
-
+const LogoButton = memo(({ onClick, onKeyDown, isMobile }) => {
   return (
     <Box
       component="button"
       role="button"
       type="button"
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        gap: 1,
-        cursor: "pointer",
-        border: "none",
-        background: "transparent",
-        p: 0,
-        "&:focus-visible": {
-          outline: "2px solid",
-          outlineColor: "primary.main",
-          outlineOffset: 2,
-          borderRadius: 1,
-        },
-      }}
+      sx={logoButtonStyles}
       onClick={onClick}
       onKeyDown={onKeyDown}
       tabIndex={0}
@@ -98,12 +115,23 @@ const LogoButton = memo(({ onClick, onKeyDown }) => {
 
 LogoButton.displayName = "LogoButton";
 
+LogoButton.propTypes = {
+  onClick: PropTypes.func.isRequired,
+  onKeyDown: PropTypes.func.isRequired,
+  isMobile: PropTypes.bool.isRequired,
+};
+
 /**
  * PublicHeader Component - Header for public pages
  * @component
  */
 const PublicHeader = memo(() => {
   const navigate = useNavigate();
+  const { user, isAuthenticated, logout } = useAuth();
+  const { isMobile } = useResponsive();
+
+  const [anchorEl, setAnchorEl] = useState(null);
+  const open = Boolean(anchorEl);
 
   // Handle logo navigation - memoized for stable reference
   const handleLogoNavigation = useCallback(() => {
@@ -121,17 +149,57 @@ const PublicHeader = memo(() => {
     [handleLogoNavigation]
   );
 
+  // Handle login navigation
+  const handleLogin = useCallback(() => {
+    navigate("/login");
+  }, [navigate]);
+
+  // Handle user menu open
+  const handleMenuOpen = useCallback((event) => {
+    setAnchorEl(event.currentTarget);
+  }, []);
+
+  // Handle user menu close
+  const handleMenuClose = useCallback(() => {
+    setAnchorEl(null);
+  }, []);
+
+  // Handle dashboard navigation
+  const handleDashboard = useCallback(() => {
+    navigate("/dashboard");
+    handleMenuClose();
+  }, [navigate, handleMenuClose]);
+
+  // Handle logout
+  const handleLogout = useCallback(async () => {
+    try {
+      await logout();
+      navigate("/login");
+      toast.success("Logged out successfully");
+    } catch (error) {
+      logger.error("[PublicHeader] Logout failed", error);
+      toast.error("Failed to logout. Please try again.");
+    } finally {
+      handleMenuClose();
+    }
+  }, [logout, navigate, handleMenuClose]);
+
   return (
     <AppBar
       position="fixed"
       elevation={1}
-      sx={{
-        zIndex: (theme) => theme.zIndex.drawer + 1,
+      sx={(theme) => ({
+        zIndex: theme.zIndex.drawer + 1,
         bgcolor: "background.paper",
         color: "text.primary",
         borderBottom: 1,
         borderColor: "divider",
-      }}
+        [theme.breakpoints.up("xl")]: {
+          maxWidth: theme.breakpoints.values.xl,
+          left: "50%",
+          transform: "translateX(-50%)",
+        },
+      })}
     >
       <Toolbar
         sx={{
@@ -144,6 +212,7 @@ const PublicHeader = memo(() => {
         <LogoButton
           onClick={handleLogoNavigation}
           onKeyDown={handleLogoKeyDown}
+          isMobile={isMobile}
         />
 
         {/* Spacer */}
@@ -151,6 +220,94 @@ const PublicHeader = memo(() => {
 
         {/* Theme Toggle */}
         <MuiThemeDropDown />
+
+        {/* Auth Actions */}
+        {isAuthenticated && user ? (
+          // Authenticated: Show user avatar with menu
+          <>
+            <MuiTooltip title="Account">
+              <IconButton
+                onClick={handleMenuOpen}
+                size="small"
+                aria-label="account menu"
+                aria-controls={open ? "account-menu" : undefined}
+                aria-haspopup="true"
+                aria-expanded={open ? "true" : undefined}
+              >
+                <Avatar
+                  sx={{
+                    width: { xs: 32, sm: 40 },
+                    height: { xs: 32, sm: 40 },
+                    bgcolor: "primary.main",
+                    fontSize: { xs: "0.875rem", sm: "1rem" },
+                  }}
+                  src={user?.profilePicture?.url}
+                  alt={user?.firstName || "User"}
+                >
+                  {getUserInitials(user)}
+                </Avatar>
+              </IconButton>
+            </MuiTooltip>
+
+            {/* User Menu */}
+            <Menu
+              id="account-menu"
+              anchorEl={anchorEl}
+              open={open}
+              onClose={handleMenuClose}
+              onClick={handleMenuClose}
+              slotProps={{
+                paper: {
+                  elevation: 8,
+                  sx: {
+                    minWidth: 200,
+                    mt: 1.5,
+                    overflow: "visible",
+                    filter: "drop-shadow(0px 2px 8px rgba(0,0,0,0.1))",
+                    "&:before": {
+                      content: '""',
+                      display: "block",
+                      position: "absolute",
+                      top: 0,
+                      right: 14,
+                      width: 10,
+                      height: 10,
+                      bgcolor: "background.paper",
+                      transform: "translateY(-50%) rotate(45deg)",
+                      zIndex: 0,
+                    },
+                  },
+                },
+              }}
+              transformOrigin={{ horizontal: "right", vertical: "top" }}
+              anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
+            >
+              <UserMenuItems
+                user={user}
+                onDashboard={handleDashboard}
+                onLogout={handleLogout}
+                showDashboard
+              />
+            </Menu>
+          </>
+        ) : (
+          // Unauthenticated: Show login button
+          <Button
+            size="small"
+            startIcon={<LoginIcon />}
+            onClick={handleLogin}
+            sx={{
+              textTransform: "none",
+              fontWeight: 600,
+              bgcolor: "primary.main",
+              "&:hover": {
+                bgcolor: "primary.dark",
+              },
+            }}
+          >
+            {isMobile ? "Login" : "Sign In"}
+          </Button>
+        )}
       </Toolbar>
     </AppBar>
   );
@@ -169,6 +326,7 @@ const AuthLayout = () => {
         display: "flex",
         flexDirection: "column",
         minHeight: "100vh",
+        height: "100%",
         width: "100%",
         overflow: "hidden",
       }}
@@ -185,6 +343,7 @@ const AuthLayout = () => {
           flexDirection: "column",
           width: "100%",
           minHeight: "100vh",
+          height: "100%",
           overflow: "auto",
           bgcolor: "background.default",
           pt: { xs: 7, sm: 8 }, // Toolbar height offset

@@ -136,12 +136,18 @@ departmentSchema.pre("save", async function (next) {
     // Get session from this.$session() if available
     const session = this.$session();
 
-    // Validate manager is present (unless this is initial creation)
+    // Skip validation for new documents (initial creation during registration)
+    // Manager and createdBy will be set after user creation
+    if (this.isNew) {
+      return next();
+    }
+
+    // Validate manager is present (for existing documents)
     if (!this.manager) {
       return next(new Error("Manager is required"));
     }
 
-    // Validate createdBy is present (unless this is initial creation)
+    // Validate createdBy is present (for existing documents)
     if (!this.createdBy) {
       return next(new Error("Created by user is required"));
     }

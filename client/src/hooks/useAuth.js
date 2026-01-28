@@ -19,6 +19,7 @@ import {
   useForgotPasswordMutation,
   useResetPasswordMutation,
   useVerifyEmailMutation,
+  useResendVerificationMutation,
 } from "../redux/features/authSlice";
 
 /**
@@ -34,6 +35,7 @@ import {
  * @returns {Function} return.forgotPassword - Forgot password function
  * @returns {Function} return.resetPassword - Reset password function
  * @returns {Function} return.verifyEmail - Verify email function
+ * @returns {Function} return.resendVerification - Resend verification email function
  * @returns {boolean} return.isLoading - True if any auth operation is in progress
  */
 const useAuth = () => {
@@ -54,6 +56,10 @@ const useAuth = () => {
     useResetPasswordMutation();
   const [verifyEmailMutation, { isLoading: isVerifyEmailLoading }] =
     useVerifyEmailMutation();
+  const [
+    resendVerificationMutation,
+    { isLoading: isResendVerificationLoading },
+  ] = useResendVerificationMutation();
 
   /**
    * Login user with email and password
@@ -111,6 +117,15 @@ const useAuth = () => {
    */
   const verifyEmail = (data) => verifyEmailMutation(data).unwrap();
 
+  /**
+   * Resend email verification link
+   * @param {Object} data - Email data
+   * @param {string} data.email - User email
+   * @returns {Promise<Object>} Resend verification response
+   */
+  const resendVerification = (data) =>
+    resendVerificationMutation(data).unwrap();
+
   // Aggregate loading state
   const isLoading =
     isLoginLoading ||
@@ -119,7 +134,8 @@ const useAuth = () => {
     isRefreshLoading ||
     isForgotPasswordLoading ||
     isResetPasswordLoading ||
-    isVerifyEmailLoading;
+    isVerifyEmailLoading ||
+    isResendVerificationLoading;
 
   return {
     user,
@@ -131,6 +147,7 @@ const useAuth = () => {
     forgotPassword,
     resetPassword,
     verifyEmail,
+    resendVerification,
     isLoading,
   };
 };

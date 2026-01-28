@@ -15,3 +15,4 @@
 export { default as ErrorBoundary } from "./ErrorBoundary";
 export { default as ErrorDisplay } from "./ErrorDisplay";
 export { default as ApiErrorDisplay } from "./ApiErrorDisplay";
+export { default as UserMenuItems } from "./UserMenuItems";

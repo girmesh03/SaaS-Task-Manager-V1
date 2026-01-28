@@ -34,99 +34,19 @@ import Typography from "@mui/material/Typography";
 import IconButton from "@mui/material/IconButton";
 import Avatar from "@mui/material/Avatar";
 import Menu from "@mui/material/Menu";
-import MenuItem from "@mui/material/MenuItem";
-import Divider from "@mui/material/Divider";
-import ListItemIcon from "@mui/material/ListItemIcon";
-import ListItemText from "@mui/material/ListItemText";
 import MenuIcon from "@mui/icons-material/Menu";
-import PersonIcon from "@mui/icons-material/Person";
-import SettingsIcon from "@mui/icons-material/Settings";
-import LogoutIcon from "@mui/icons-material/Logout";
 import TaskAltIcon from "@mui/icons-material/TaskAlt";
 import {
   MuiNotificationBell,
   MuiThemeDropDown,
   MuiSelectAutocomplete,
-  MuiTooltip,
 } from "../reusable";
+import { UserMenuItems } from "../common";
 import { useAuth, useAuthorization, useResponsive } from "../../hooks";
 import { useGetOrganizationsQuery } from "../../redux/features/organizationSlice";
+import { getUserInitials } from "../../utils/userHelpers";
+import { getMenuSlotProps } from "../../utils/menuStyles";
 import logger from "../../utils/logger";
-
-/**
- * Get user initials from user object
- * @param {Object} user - User object
- * @returns {string} User initials (e.g., "JD" for John Doe)
- */
-const getUserInitials = (user) => {
-  if (!user) return "U";
-  const firstName = user?.firstName || "";
-  const lastName = user?.lastName || "";
-  return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || "U";
-};
-
-/**
- * UserMenuItems Component - User menu dropdown items
- * @component
- */
-const UserMenuItems = memo(({ user, onProfile, onSettings, onLogout }) => (
-  <>
-    {/* User Info */}
-    <Box sx={{ px: 2, py: 1.5 }}>
-      <Typography variant="subtitle2" fontWeight="medium">
-        {user?.firstName} {user?.lastName}
-      </Typography>
-      <Typography variant="body2" color="text.secondary" noWrap>
-        {user?.email}
-      </Typography>
-      <Typography variant="caption" color="text.disabled">
-        {user?.role}
-      </Typography>
-    </Box>
-
-    <Divider />
-
-    {/* Menu Items */}
-    <MenuItem onClick={onProfile}>
-      <ListItemIcon>
-        <PersonIcon fontSize="small" />
-      </ListItemIcon>
-      <ListItemText>Profile</ListItemText>
-    </MenuItem>
-
-    <MenuItem onClick={onSettings}>
-      <ListItemIcon>
-        <SettingsIcon fontSize="small" />
-      </ListItemIcon>
-      <ListItemText>Settings</ListItemText>
-    </MenuItem>
-
-    <Divider />
-
-    <MenuItem onClick={onLogout}>
-      <ListItemIcon>
-        <LogoutIcon fontSize="small" color="error" />
-      </ListItemIcon>
-      <ListItemText>
-        <Typography color="error">Logout</Typography>
-      </ListItemText>
-    </MenuItem>
-  </>
-));
-
-UserMenuItems.displayName = "UserMenuItems";
-
-UserMenuItems.propTypes = {
-  user: PropTypes.shape({
-    firstName: PropTypes.string,
-    lastName: PropTypes.string,
-    email: PropTypes.string,
-    role: PropTypes.string,
-  }),
-  onProfile: PropTypes.func.isRequired,
-  onSettings: PropTypes.func.isRequired,
-  onLogout: PropTypes.func.isRequired,
-};
 
 const Header = memo(({ onMenuClick }) => {
   const navigate = useNavigate();
@@ -221,13 +141,18 @@ const Header = memo(({ onMenuClick }) => {
     <AppBar
       position="fixed"
       elevation={1}
-      sx={{
-        zIndex: (theme) => theme.zIndex.drawer + 1,
+      sx={(theme) => ({
+        zIndex: theme.zIndex.drawer + 1,
         bgcolor: "background.paper",
         color: "text.primary",
         borderBottom: 1,
         borderColor: "divider",
-      }}
+        [theme.breakpoints.up("xl")]: {
+          maxWidth: theme.breakpoints.values.xl,
+          left: "50%",
+          transform: "translateX(-50%)",
+        },
+      })}
     >
       <Toolbar
         sx={{
@@ -331,29 +256,27 @@ const Header = memo(({ onMenuClick }) => {
           <MuiThemeDropDown />
 
           {/* User Avatar and Menu */}
-          <MuiTooltip title="Account">
-            <IconButton
-              onClick={handleMenuOpen}
-              size="small"
-              aria-label="account menu"
-              aria-controls={open ? "account-menu" : undefined}
-              aria-haspopup="true"
-              aria-expanded={open ? "true" : undefined}
+          <IconButton
+            onClick={handleMenuOpen}
+            size="small"
+            aria-label="account menu"
+            aria-controls={open ? "account-menu" : undefined}
+            aria-haspopup="true"
+            aria-expanded={open ? "true" : undefined}
+          >
+            <Avatar
+              sx={{
+                width: { xs: 32, sm: 40 },
+                height: { xs: 32, sm: 40 },
+                bgcolor: "primary.main",
+                fontSize: { xs: "0.875rem", sm: "1rem" },
+              }}
+              src={user?.profilePicture?.url}
+              alt={user?.firstName || "User"}
             >
-              <Avatar
-                sx={{
-                  width: { xs: 32, sm: 40 },
-                  height: { xs: 32, sm: 40 },
-                  bgcolor: "primary.main",
-                  fontSize: { xs: "0.875rem", sm: "1rem" },
-                }}
-                src={user?.profilePicture?.url}
-                alt={user?.firstName || "User"}
-              >
-                {getUserInitials(user)}
-              </Avatar>
-            </IconButton>
-          </MuiTooltip>
+              {getUserInitials(user)}
+            </Avatar>
+          </IconButton>
         </Box>
 
         {/* User Menu */}
@@ -363,31 +286,10 @@ const Header = memo(({ onMenuClick }) => {
           open={open}
           onClose={handleMenuClose}
           onClick={handleMenuClose}
-          slots={{
-            paper: Box,
-          }}
-          slotProps={{
-            paper: {
-              elevation: 8,
-              sx: {
-                minWidth: 200,
-                mt: 1.5,
-                overflow: "visible",
-                filter: "drop-shadow(0px 2px 8px rgba(0,0,0,0.1))",
-                "&:before": {
-                  content: '""',
-                  display: "block",
-                  position: "absolute",
-                  top: 0,
-                  right: 14,
-                  width: 10,
-                  height: 10,
-                  bgcolor: "background.paper",
-                  transform: "translateY(-50%) rotate(45deg)",
-                  zIndex: 0,
-                },
-              },
-            },
+          slotProps={getMenuSlotProps()}
+          MenuListProps={{
+            "aria-labelledby": "account-button",
+            role: "menu",
           }}
           transformOrigin={{ horizontal: "right", vertical: "top" }}
           anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
@@ -397,6 +299,8 @@ const Header = memo(({ onMenuClick }) => {
             onProfile={handleProfile}
             onSettings={handleSettings}
             onLogout={handleLogout}
+            showProfile
+            showSettings
           />
         </Menu>
       </Toolbar>

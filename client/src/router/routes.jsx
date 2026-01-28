@@ -3,28 +3,36 @@ import { createBrowserRouter } from "react-router";
 import {
   RootLayout,
   AuthLayout,
+  PublicRoutes,
   ProtectedRoutes,
   DashboardLayout,
 } from "../components/layout";
 import { MuiLoading } from "../components/reusable";
-import { DepartmentDetails } from "../components/department";
-import { UserDetails } from "../components/user";
-import { TaskDetails } from "../components/task";
-import { MaterialDetails } from "../components/material";
-import { VendorDetails } from "../components/vendor";
+
+/**
+ * Lazy load helper - reduces boilerplate for route lazy loading
+ * @param {Function} importFn - Dynamic import function
+ * @param {string} componentName - Name of the component to extract
+ * @returns {Promise<{Component: React.ComponentType}>}
+ */
+const lazyLoad = (importFn, componentName) => async () => {
+  const module = await importFn();
+  return { Component: module[componentName] };
+};
 
 /**
  * Application Routes
  * Defines all routes with proper nesting and error handling:
  * - RootLayout: Parent for all routes (public + authenticated)
- * - AuthLayout: Layout for public pages (header with logo and theme toggle)
+ * - PublicRoutes: Redirects authenticated users from auth pages (except landing page)
+ * - AuthLayout: Layout for public pages (header with logo, theme toggle, and auth actions)
  * - ProtectedRoutes: Protects authenticated routes, manages socket connections
  * - DashboardLayout: Layout for dashboard pages (header, sidebar, content)
- * - Public routes: Home, Login, Register, etc. (children of AuthLayout)
+ * - Public routes: Home, Login, Register, etc. (children of PublicRoutes → AuthLayout)
  * - Protected routes: Dashboard, Tasks, etc. (children of ProtectedRoutes → DashboardLayout)
  *
  * Flow:
- * - Public: RootLayout → AuthLayout → Outlet
+ * - Public: RootLayout → PublicRoutes → AuthLayout → Outlet
  * - Protected: RootLayout → ProtectedRoutes → DashboardLayout → Outlet
  *
  * Error Handling Strategy:
@@ -34,6 +42,11 @@ import { VendorDetails } from "../components/vendor";
  *
  * Note: ErrorBoundary is implemented at the layout level to catch all errors
  * including route loading failures, component render errors, and lifecycle errors.
+ *
+ * Lazy Loading Strategy:
+ * - All pages are lazy loaded for optimal bundle size
+ * - All detail components are lazy loaded for optimal bundle size
+ * - Layout components are eagerly loaded for immediate rendering
  */
 
 const routes = createBrowserRouter([
@@ -42,51 +55,38 @@ const routes = createBrowserRouter([
     Component: RootLayout,
     HydrateFallback: MuiLoading,
     children: [
-      // Public routes (no authentication required) - wrapped in AuthLayout
+      // Public routes (no authentication required) - wrapped in PublicRoutes → AuthLayout
       {
-        Component: AuthLayout,
+        Component: PublicRoutes,
         children: [
           {
-            index: true,
-            lazy: async () => {
-              const { Home } = await import("../pages");
-              return { Component: Home };
-            },
-          },
-          {
-            path: "login",
-            lazy: async () => {
-              const { Login } = await import("../pages");
-              return { Component: Login };
-            },
-          },
-          {
-            path: "register",
-            lazy: async () => {
-              const { Register } = await import("../pages");
-              return { Component: Register };
-            },
-          },
-          {
-            path: "forgot-password",
-            lazy: async () => {
-              const { ForgotPassword } = await import("../pages");
-              return { Component: ForgotPassword };
-            },
-          },
-          {
-            path: "reset-password",
-            lazy: async () => {
-              const { ResetPassword } = await import("../pages");
-              return { Component: ResetPassword };
-            },
-          },
-          {
-            path: "verify-email",
-            lazy: async () => {
-              const { EmailVerification } = await import("../pages");
-              return { Component: EmailVerification };
-            },
+            Component: AuthLayout,
+            children: [
+              {
+                index: true,
+                lazy: lazyLoad(() => import("../pages"), "Home"),
+              },
+              {
+                path: "login",
+                lazy: lazyLoad(() => import("../pages"), "Login"),
+              },
+              {
+                path: "register",
+                lazy: lazyLoad(() => import("../pages"), "Register"),
+              },
+              {
+                path: "forgot-password",
+                lazy: lazyLoad(() => import("../pages"), "ForgotPassword"),
+              },
+              {
+                path: "reset-password",
+                lazy: lazyLoad(() => import("../pages"), "ResetPassword"),
+              },
+              {
+                path: "verify-email",
+                lazy: lazyLoad(() => import("../pages"), "EmailVerification"),
+              },
+            ],
           },
         ],
       },
@@ -101,65 +101,62 @@ const routes = createBrowserRouter([
             children: [
               {
                 index: true,
-                lazy: async () => {
-                  const { Dashboard } = await import("../pages");
-                  return { Component: Dashboard };
-                },
+                lazy: lazyLoad(() => import("../pages"), "Dashboard"),
               },
               {
                 path: "departments",
-                lazy: async () => {
-                  const { Departments } = await import("../pages");
-                  return { Component: Departments };
-                },
+                lazy: lazyLoad(() => import("../pages"), "Departments"),
               },
               {
                 path: "departments/:departmentId",
-                Component: DepartmentDetails,
+                lazy: lazyLoad(
+                  () => import("../components/department"),
+                  "DepartmentDetails"
+                ),
               },
               {
                 path: "users",
-                lazy: async () => {
-                  const { Users } = await import("../pages");
-                  return { Component: Users };
-                },
+                lazy: lazyLoad(() => import("../pages"), "Users"),
               },
               {
                 path: "users/:userId",
-                Component: UserDetails,
+                lazy: lazyLoad(
+                  () => import("../components/user"),
+                  "UserDetails"
+                ),
               },
               {
                 path: "tasks",
-                lazy: async () => {
-                  const { Tasks } = await import("../pages");
-                  return { Component: Tasks };
-                },
+                lazy: lazyLoad(() => import("../pages"), "Tasks"),
               },
               {
                 path: "tasks/:taskId",
-                Component: TaskDetails,
+                lazy: lazyLoad(
+                  () => import("../components/task"),
+                  "TaskDetails"
+                ),
               },
               {
                 path: "materials",
-                lazy: async () => {
-                  const { Materials } = await import("../pages");
-                  return { Component: Materials };
-                },
+                lazy: lazyLoad(() => import("../pages"), "Materials"),
               },
               {
                 path: "materials/:materialId",
-                Component: MaterialDetails,
+                lazy: lazyLoad(
+                  () => import("../components/material"),
+                  "MaterialDetails"
+                ),
               },
               {
                 path: "vendors",
-                lazy: async () => {
-                  const { Vendors } = await import("../pages");
-                  return { Component: Vendors };
-                },
+                lazy: lazyLoad(() => import("../pages"), "Vendors"),
               },
               {
                 path: "vendors/:vendorId",
-                Component: VendorDetails,
+                lazy: lazyLoad(
+                  () => import("../components/vendor"),
+                  "VendorDetails"
+                ),
               },
             ],
           },
@@ -169,10 +166,7 @@ const routes = createBrowserRouter([
       // 404 Not Found
       {
         path: "*",
-        lazy: async () => {
-          const { NotFound } = await import("../pages");
-          return { Component: NotFound };
-        },
+        lazy: lazyLoad(() => import("../pages"), "NotFound"),
       },
     ],
   },

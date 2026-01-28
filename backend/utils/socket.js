@@ -35,6 +35,14 @@ export const initializeSocketIO = (httpServer, corsOptions) => {
     // Authentication middleware
     io.use(async (socket, next) => {
       try {
+        // Log handshake details for debugging
+        logger.info("Socket.IO connection attempt", {
+          socketId: socket.id,
+          hasAuthToken: !!socket.handshake.auth.token,
+          hasCookieHeader: !!socket.handshake.headers.cookie,
+          cookieHeader: socket.handshake.headers.cookie,
+        });
+
         // Extract token from handshake auth or cookies
         const token =
           socket.handshake.auth.token ||
@@ -47,6 +55,8 @@ export const initializeSocketIO = (httpServer, corsOptions) => {
           logger.warn("Socket.IO connection attempt without token", {
             socketId: socket.id,
             ip: socket.handshake.address,
+            authToken: socket.handshake.auth.token,
+            cookieHeader: socket.handshake.headers.cookie,
           });
           return next(
             new Error(
@@ -59,12 +69,21 @@ export const initializeSocketIO = (httpServer, corsOptions) => {
         }
 
         // Verify JWT token (same secret as HTTP requests)
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+
+        // Log decoded token for debugging
+        logger.info("JWT token decoded successfully", {
+          socketId: socket.id,
+          userId: decoded.userId,
+          organizationId: decoded.organization,
+          departmentId: decoded.department,
+          role: decoded.role,
+        });
 
         // Attach user data to socket
         socket.userId = decoded.userId;
-        socket.organizationId = decoded.organizationId;
-        socket.departmentId = decoded.departmentId;
+        socket.organizationId = decoded.organization;
+        socket.departmentId = decoded.department;
         socket.role = decoded.role;
         socket.isPlatformUser = decoded.isPlatformUser;
 

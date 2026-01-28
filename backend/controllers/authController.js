@@ -66,6 +66,15 @@ import {
  */
 
 /**
+ * Get frontend URL from environment
+ * @returns {string} Frontend URL
+ */
+const getFrontendUrl = () => {
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
+  return allowedOrigins[0] || "http://localhost:3000";
+};
+
+/**
  * Get account lockout duration in minutes
  * @returns {number} Lockout duration in minutes
  */
@@ -171,7 +180,7 @@ const createSuperAdminUser = async (
         department: departmentId,
         isPlatformUser: false,
         isHod: true,
-        employeeId: userData.employeeId,
+        employeeId: userData.employeeId || null,
         joinedAt: userData.joinedAt || new Date(),
         dateOfBirth: userData.dateOfBirth || null,
         phone: userData.phone || null,
@@ -261,59 +270,100 @@ export const register = asyncHandler(async (req, res, next) => {
     await session.commitTransaction();
     logger.info("Registration transaction committed successfully");
 
-    // Generate JWT tokens
-    const { accessToken, refreshToken } = generateTokens(user);
+    // Get frontend URL for email links
+    const frontendUrl = getFrontendUrl();
 
-    // Update user with refresh token
-    await updateUserRefreshToken(user, refreshToken);
+    // Generate email verification token (required for registration)
+    const verificationToken = user.generateEmailVerificationToken();
+    await user.save();
 
-    // Set httpOnly cookies
-    setTokenCookies(res, accessToken, refreshToken);
-
-    // Populate user with organization and department for response
-    const populatedUser = await User.findById(user._id)
-      .populate({
-        path: "organization",
-        select:
-          "name email phone address industry size logo isPlatformOrg subscription settings",
-      })
-      .populate({
-        path: "department",
-        select: "name description manager",
-      })
-      .select(
-        "-password -refreshToken -refreshTokenExpiry -passwordResetToken -passwordResetExpiry"
-      )
-      .lean();
-
-    // Send welcome email
-    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
-    const frontendUrl = allowedOrigins[0] || "http://localhost:3000";
-    const loginUrl = `${frontendUrl}/login`;
-    await sendWelcomeEmail(
-      user.email,
-      `${user.firstName} ${user.lastName}`,
-      organization.name,
-      loginUrl
-    );
-
-    // Optional: Send email verification email (if EMAIL_VERIFICATION_ENABLED is true)
-    if (process.env.EMAIL_VERIFICATION_ENABLED === "true") {
-      const verificationToken = user.generateEmailVerificationToken();
-      await user.save();
-
+    // Send verification email to USER email (CRITICAL: Must succeed)
+    try {
       const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
-      await sendEmailVerificationEmail(
-        user.email,
+      const verificationResult = await sendEmailVerificationEmail(
+        user.email, // ✅ Send to USER email, not organization email
         `${user.firstName} ${user.lastName}`,
-        verificationToken,
         verificationUrl
       );
+
+      if (!verificationResult.success) {
+        logger.error("Failed to send verification email", {
+          userId: user._id,
+          email: user.email,
+          error: verificationResult.error,
+        });
+
+        // CRITICAL: Email verification is required for login
+        // If email fails, user cannot login, so we must fail registration
+        throw new CustomError(
+          "Failed to send verification email. Please try again or contact support.",
+          HTTP_STATUS.INTERNAL_SERVER_ERROR,
+          ERROR_CODES.INTERNAL_ERROR
+        );
+      }
 
       logger.info("Email verification token sent", {
         userId: user._id,
         email: user.email,
       });
+
+      // Send welcome email (optional - failure won't abort registration)
+      try {
+        const loginUrl = `${frontendUrl}/login`;
+        const welcomeResult = await sendWelcomeEmail(
+          user.email,
+          `${user.firstName} ${user.lastName}`,
+          organization.name,
+          loginUrl
+        );
+
+        if (!welcomeResult.success) {
+          logger.error("Failed to send welcome email", {
+            userId: user._id,
+            email: user.email,
+            error: welcomeResult.error,
+          });
+        }
+      } catch (welcomeError) {
+        logger.error("Welcome email sending failed", {
+          userId: user._id,
+          email: user.email,
+          error: welcomeError.message,
+        });
+        // Continue - welcome email is optional
+      }
+    } catch (emailError) {
+      logger.error("Email verification failed during registration", {
+        userId: user._id,
+        email: user.email,
+        error: emailError.message,
+        stack: emailError.stack,
+      });
+
+      // CRITICAL: Must delete created resources if email verification fails
+      // User cannot login without email verification
+      // Use MongoDB native deleteOne to bypass soft delete plugin (hard delete)
+      try {
+        await User.collection.deleteOne({ _id: user._id });
+        await Department.collection.deleteOne({ _id: department._id });
+        await Organization.collection.deleteOne({ _id: organization._id });
+        logger.info("Cleaned up resources after email verification failure", {
+          userId: user._id,
+          organizationId: organization._id,
+          departmentId: department._id,
+        });
+      } catch (cleanupError) {
+        logger.error("Failed to cleanup resources after email failure", {
+          error: cleanupError.message,
+        });
+      }
+
+      // Throw error to return to user
+      throw new CustomError(
+        "Failed to send verification email. Please try again or contact support.",
+        HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        ERROR_CODES.INTERNAL_ERROR
+      );
     }
 
     logger.info("Registration successful", {
@@ -322,13 +372,14 @@ export const register = asyncHandler(async (req, res, next) => {
       departmentId: department._id,
     });
 
-    // Return success response with full user data
+    // Return success response WITHOUT user data or tokens
+    // User must verify email before logging in
     return res
       .status(HTTP_STATUS.CREATED)
       .json(
         formatSuccessResponse(
-          { user: populatedUser },
-          "Registration successful"
+          null,
+          "Registration successful. Please check your email to verify your account before logging in."
         )
       );
   } catch (error) {
@@ -460,6 +511,22 @@ export const login = asyncHandler(async (req, res, next) => {
       });
       throw new CustomError(
         "Department has been deleted",
+        HTTP_STATUS.UNAUTHORIZED,
+        ERROR_CODES.UNAUTHENTICATED_ERROR
+      );
+    }
+
+    // Check if email is verified (CRITICAL: Required for login)
+    if (!user.isEmailVerified) {
+      logger.warn("Unverified user attempted to login", {
+        email: user.email,
+        userId: user._id,
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+        timestamp: new Date().toISOString(),
+      });
+      throw new CustomError(
+        "Please verify your email before logging in. Check your inbox for the verification link.",
         HTTP_STATUS.UNAUTHORIZED,
         ERROR_CODES.UNAUTHENTICATED_ERROR
       );
@@ -717,6 +784,22 @@ export const refreshToken = asyncHandler(async (req, res, next) => {
       );
     }
 
+    // Check if email is verified (CRITICAL: Required for login)
+    if (!user.isEmailVerified) {
+      logger.warn("Unverified user attempted to login", {
+        email: user.email,
+        userId: user._id,
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+        timestamp: new Date().toISOString(),
+      });
+      throw new CustomError(
+        "Please verify your email before logging in. Check your inbox for the verification link.",
+        HTTP_STATUS.UNAUTHORIZED,
+        ERROR_CODES.UNAUTHENTICATED_ERROR
+      );
+    }
+
     // Check organization subscription (skip for platform organizations)
     if (!user.organization.isPlatformOrg) {
       const subscription = user.organization.subscription;
@@ -889,13 +972,11 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
     await user.save();
 
     // Send password reset email with token
-    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
-    const frontendUrl = allowedOrigins[0] || "http://localhost:3000";
+    const frontendUrl = getFrontendUrl();
     const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
     await sendPasswordResetEmail(
       user.email,
       `${user.firstName} ${user.lastName}`,
-      resetToken,
       resetUrl
     );
 
@@ -1063,6 +1144,96 @@ export const verifyEmail = asyncHandler(async (req, res, next) => {
   }
 });
 
+/**
+ * Resend email verification
+ * Generates new verification token and sends email
+ *
+ * @route POST /api/auth/resend-verification
+ * @access Public
+ * @param {import('express').Request} req - Express request object
+ * @param {import('express').Response} res - Express response object
+ * @param {import('express').NextFunction} next - Express next function
+ */
+export const resendVerification = asyncHandler(async (req, res, next) => {
+  try {
+    const { email } = req.validated.body;
+
+    logger.info("Resend verification request", { email });
+
+    // Find user by email
+    /** @type {UserDocument | null} */
+    const user = await User.findOne({ email: email.toLowerCase() }).select(
+      "+emailVerificationToken +emailVerificationExpiry +isEmailVerified"
+    );
+
+    if (!user) {
+      // Don't reveal if user exists or not (security best practice)
+      return res
+        .status(HTTP_STATUS.OK)
+        .json(
+          formatSuccessResponse(
+            null,
+            "If the email exists and is not verified, a verification link has been sent"
+          )
+        );
+    }
+
+    // Check if email is already verified
+    if (user.isEmailVerified) {
+      return res
+        .status(HTTP_STATUS.OK)
+        .json(
+          formatSuccessResponse(
+            null,
+            "Email is already verified. You can login to your account"
+          )
+        );
+    }
+
+    // Generate new verification token
+    const verificationToken = user.generateEmailVerificationToken();
+    await user.save();
+
+    // Send verification email
+    const frontendUrl = getFrontendUrl();
+    const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
+    const emailResult = await sendEmailVerificationEmail(
+      user.email,
+      `${user.firstName} ${user.lastName}`,
+      verificationUrl
+    );
+
+    if (!emailResult.success) {
+      logger.error("Failed to resend verification email", {
+        userId: user._id,
+        email: user.email,
+        error: emailResult.error,
+      });
+    } else {
+      logger.info("Verification email resent", {
+        userId: user._id,
+        email: user.email,
+      });
+    }
+
+    // Return success response (don't reveal if user exists)
+    return res
+      .status(HTTP_STATUS.OK)
+      .json(
+        formatSuccessResponse(
+          null,
+          "If the email exists and is not verified, a verification link has been sent"
+        )
+      );
+  } catch (error) {
+    logger.error("Resend verification failed", {
+      error: error.message,
+      email: req.validated?.body?.email,
+    });
+    next(error);
+  }
+});
+
 export default {
   register,
   login,
@@ -1071,4 +1242,5 @@ export default {
   forgotPassword,
   resetPassword,
   verifyEmail,
+  resendVerification,
 };

@@ -29,7 +29,8 @@ const logFormat = printf(
       msg += `\n${stack}`;
     }
 
-    return msg;
+    // Add newline for better readability
+    return msg + "\n";
   }
 );
 

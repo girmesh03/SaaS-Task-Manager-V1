@@ -37,12 +37,19 @@ const DashboardLayout = () => {
 
   return (
     <Box
-      sx={{
+      sx={(theme) => ({
         display: "flex",
+        flexDirection: "row",
         minHeight: "100vh",
+        height: "100%",
         width: "100%",
         overflow: "hidden",
-      }}
+        position: "relative",
+        [theme.breakpoints.up("xl")]: {
+          maxWidth: theme.breakpoints.values.xl,
+          margin: "0 auto",
+        },
+      })}
     >
       {/* Header */}
       <Header onMenuClick={handleDrawerToggle} />
@@ -58,7 +65,7 @@ const DashboardLayout = () => {
           display: "flex",
           flexDirection: "column",
           width: { xs: "100%", lg: "calc(100% - 240px)" },
-          minHeight: "100vh",
+          height: "100%",
           overflow: "auto",
           bgcolor: "background.default",
         }}
@@ -74,7 +81,7 @@ const DashboardLayout = () => {
             flexDirection: "column",
             p: { xs: 2, sm: 3 },
             width: "100%",
-            maxWidth: "100%",
+            height: "100%",
             overflow: "auto",
           }}
         >

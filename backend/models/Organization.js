@@ -138,7 +138,7 @@ const organizationSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: [true, "Created by user is required"],
+      // required: [true, "Created by user is required"],
     },
 
     // Platform Organization Flag (Requirement 7.3, 7.4)

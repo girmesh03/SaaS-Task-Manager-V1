@@ -7,6 +7,7 @@ import {
   forgotPassword,
   resetPassword,
   verifyEmail,
+  resendVerification,
 } from "../controllers/authController.js";
 import {
   registerValidator,
@@ -16,6 +17,7 @@ import {
   forgotPasswordValidator,
   resetPasswordValidator,
   verifyEmailValidator,
+  resendVerificationValidator,
 } from "../middlewares/validators/authValidators.js";
 import { validate } from "../middlewares/validation.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
@@ -33,6 +35,10 @@ import {
  * - Global rate limiter in app.js: 100 requests per 15 minutes (all /api routes)
  * - Auth rate limiter: 5 requests per 15 minutes (register, login)
  * - Password reset limiter: 3 requests per hour (forgot/reset password)
+ *
+ * IMPORTANT: Rate limiting is ONLY applied in production environment
+ * In development (NODE_ENV !== "production"), all rate limiters are bypassed
+ * This allows unlimited requests during development and testing
  *
  * This layered approach provides:
  * 1. General API protection (global limiter)
@@ -116,5 +122,20 @@ router.post(
  * @validation verifyEmailValidator
  */
 router.post("/verify-email", verifyEmailValidator, validate, verifyEmail);
+
+/**
+ * @route   POST /api/auth/resend-verification
+ * @desc    Resend email verification link
+ * @access  Public
+ * @validation resendVerificationValidator
+ * @rateLimit passwordResetLimiter (3 requests per hour)
+ */
+router.post(
+  "/resend-verification",
+  passwordResetLimiter,
+  resendVerificationValidator,
+  validate,
+  resendVerification
+);
 
 export default router;

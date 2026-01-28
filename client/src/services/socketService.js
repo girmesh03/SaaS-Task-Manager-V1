@@ -12,7 +12,10 @@
 import { io } from "socket.io-client";
 
 // Socket.IO server URL from environment
-const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+// Remove /api suffix since Socket.IO is at root, not under /api
+const SOCKET_URL = (
+  import.meta.env.VITE_API_URL || "http://localhost:4000"
+).replace(/\/api$/, "");
 
 // Reconnection configuration with exponential backoff
 const RECONNECTION_CONFIG = {
@@ -21,7 +24,9 @@ const RECONNECTION_CONFIG = {
   reconnectionDelay: 1000, // Start with 1 second
   reconnectionDelayMax: 5000, // Max 5 seconds
   timeout: 20000,
-  transports: ["websocket", "polling"],
+  transports: ["polling", "websocket"], // Try polling first, then upgrade to websocket
+  upgrade: true, // Allow transport upgrade
+  rememberUpgrade: true, // Remember successful upgrade
 };
 
 /**
@@ -45,8 +50,13 @@ class SocketService {
    */
   async connect(user) {
     // Don't connect if already connected or connecting
-    if (this.socket?.connected || this.isConnecting) {
-      console.log("[Socket] Already connected or connecting");
+    if (this.socket?.connected) {
+      console.log("[Socket] Already connected, socket ID:", this.socket.id);
+      return;
+    }
+
+    if (this.isConnecting) {
+      console.log("[Socket] Connection already in progress");
       return;
     }
 
@@ -64,19 +74,23 @@ class SocketService {
       this.notifyStatusChange("connecting");
 
       console.log("[Socket] Connecting to server:", SOCKET_URL);
+      console.log(
+        "[Socket] Using httpOnly cookies for authentication (withCredentials: true)"
+      );
 
       // Create Socket.IO client instance
-      // Note: Backend expects JWT token in cookies, not in auth
-      // The socket.io client will automatically send cookies
+      // Token is sent automatically via httpOnly cookies with withCredentials: true
+      // Backend extracts token from socket.handshake.headers.cookie
       this.socket = io(SOCKET_URL, {
         ...RECONNECTION_CONFIG,
-        withCredentials: true, // Send cookies with requests
+        withCredentials: true, // Send httpOnly cookies with requests
+        path: "/socket.io", // Explicitly specify Socket.IO path
       });
 
       // Set up event handlers
       this.setupEventHandlers();
 
-      console.log("[Socket] Client initialized");
+      console.log("[Socket] Client initialized, waiting for authentication");
     } catch (error) {
       console.error("[Socket] Failed to initialize client:", error);
       this.isConnecting = false;

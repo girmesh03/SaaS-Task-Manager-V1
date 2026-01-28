@@ -13,10 +13,26 @@ import logger from "../utils/logger.js";
  */
 const createTransporter = () => {
   try {
+    // Validate required environment variables
+    if (
+      !process.env.SMTP_HOST ||
+      !process.env.SMTP_PORT ||
+      !process.env.SMTP_USER ||
+      !process.env.SMTP_PASS
+    ) {
+      throw new Error(
+        "Missing required SMTP configuration in environment variables"
+      );
+    }
+
+    const smtpPort = parseInt(process.env.SMTP_PORT, 10);
+    const isSecure = smtpPort === 465;
+
     const transporter = nodemailer.createTransport({
+      service: "gmail", // Use Gmail service for better compatibility
       host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT, 10),
-      secure: process.env.SMTP_PORT === "465", // true for 465, false for other ports
+      port: smtpPort,
+      secure: isSecure, // true for 465, false for other ports
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
@@ -24,31 +40,46 @@ const createTransporter = () => {
       // Connection timeout
       connectionTimeout: 10000, // 10 seconds
       // Socket timeout
+      greetingTimeout: 10000, // 10 seconds
       socketTimeout: 10000, // 10 seconds
       // Retry configuration
-      pool: true,
+      pool: true, // Enable connection pooling for better performance
       maxConnections: 5,
       maxMessages: 100,
+      // TLS options for Gmail
+      tls: {
+        rejectUnauthorized: true,
+        minVersion: "TLSv1.2",
+      },
+      // Disable debug output in production
+      debug: false,
+      logger: false,
     });
 
-    logger.info("Email transporter created successfully", {
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT,
-      user: process.env.SMTP_USER,
-    });
+    logger.info("Email transporter initialized successfully");
 
     return transporter;
   } catch (error) {
     logger.error("Failed to create email transporter", {
       error: error.message,
-      stack: error.stack,
     });
     throw error;
   }
 };
 
-// Create transporter instance
-const transporter = createTransporter();
+// Lazy-load transporter instance (created on first use)
+let transporter = null;
+
+/**
+ * Get or create transporter instance
+ * @returns {nodemailer.Transporter} Configured transporter instance
+ */
+const getTransporter = () => {
+  if (!transporter) {
+    transporter = createTransporter();
+  }
+  return transporter;
+};
 
 /**
  * Send email with error handling
@@ -63,7 +94,7 @@ const sendEmail = async (mailOptions) => {
       subject: mailOptions.subject,
     });
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await getTransporter().sendMail(mailOptions);
 
     logger.info("Email sent successfully", {
       messageId: info.messageId,
@@ -96,14 +127,12 @@ const sendEmail = async (mailOptions) => {
  * Email template for password reset
  * @param {string} recipientEmail - Recipient email address
  * @param {string} recipientName - Recipient full name
- * @param {string} resetToken - Password reset token
  * @param {string} resetUrl - Password reset URL
  * @returns {Promise<Object>} Email send result
  */
 export const sendPasswordResetEmail = async (
   recipientEmail,
   recipientName,
-  resetToken,
   resetUrl
 ) => {
   const appName = process.env.APP_NAME || "Task Manager";
@@ -226,14 +255,12 @@ export const sendPasswordResetEmail = async (
  * Email template for email verification
  * @param {string} recipientEmail - Recipient email address
  * @param {string} recipientName - Recipient full name
- * @param {string} verificationToken - Email verification token
  * @param {string} verificationUrl - Email verification URL
  * @returns {Promise<Object>} Email send result
  */
 export const sendEmailVerificationEmail = async (
   recipientEmail,
   recipientName,
-  verificationToken,
   verificationUrl
 ) => {
   const appName = process.env.APP_NAME || "Task Manager";
@@ -700,7 +727,7 @@ export const sendWelcomeEmail = async (
  */
 export const verifyEmailConnection = async () => {
   try {
-    await transporter.verify();
+    await getTransporter().verify();
     logger.info("Email transporter connection verified successfully");
     return true;
   } catch (error) {

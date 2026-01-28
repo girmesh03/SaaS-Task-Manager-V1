@@ -7,14 +7,38 @@ import logger from "../utils/logger.js";
  * Applies rate limiting to all /api routes
  * Prevents abuse and brute-force attacks
  *
+ * IMPORTANT: Rate limiting is ONLY applied in production environment
+ * In development, rate limiters are bypassed for easier testing
+ *
  * Requirements: 1.6, 39.4
  */
 
 /**
+ * Helper function to create conditional rate limiter
+ * Skips rate limiting in development environment
+ * @param {Object} config - Rate limiter configuration
+ * @returns {Function} Middleware function
+ */
+const createConditionalLimiter = (config) => {
+  const limiter = rateLimit(config);
+
+  // Return middleware that skips rate limiting in development
+  return (req, res, next) => {
+    if (process.env.NODE_ENV !== "production") {
+      // Skip rate limiting in development
+      return next();
+    }
+    // Apply rate limiting in production
+    return limiter(req, res, next);
+  };
+};
+
+/**
  * General API rate limiter
  * Applied to all /api routes
+ * ONLY in production
  */
-export const apiLimiter = rateLimit({
+export const apiLimiter = createConditionalLimiter({
   windowMs: RATE_LIMIT.WINDOW_MS, // 15 minutes
   max: RATE_LIMIT.MAX_REQUESTS, // 100 requests per window
   message: {
@@ -53,8 +77,9 @@ export const apiLimiter = rateLimit({
 /**
  * Strict rate limiter for authentication endpoints
  * Prevents brute-force attacks on login/register
+ * ONLY in production
  */
-export const authLimiter = rateLimit({
+export const authLimiter = createConditionalLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // 5 requests per window
   message: {
@@ -92,8 +117,9 @@ export const authLimiter = rateLimit({
 /**
  * Strict rate limiter for password reset endpoints
  * Prevents abuse of password reset functionality
+ * ONLY in production
  */
-export const passwordResetLimiter = rateLimit({
+export const passwordResetLimiter = createConditionalLimiter({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 3, // 3 requests per hour
   message: {
@@ -130,8 +156,9 @@ export const passwordResetLimiter = rateLimit({
 /**
  * Moderate rate limiter for create/update/delete operations
  * Prevents abuse of write operations
+ * ONLY in production
  */
-export const writeLimiter = rateLimit({
+export const writeLimiter = createConditionalLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 50, // 50 requests per window
   message: {
@@ -166,8 +193,9 @@ export const writeLimiter = rateLimit({
 /**
  * Lenient rate limiter for read operations
  * Allows more requests for read-only operations
+ * ONLY in production
  */
-export const readLimiter = rateLimit({
+export const readLimiter = createConditionalLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 200, // 200 requests per window
   message: {
@@ -202,8 +230,9 @@ export const readLimiter = rateLimit({
 /**
  * File upload rate limiter
  * Prevents abuse of file upload endpoints
+ * ONLY in production
  */
-export const uploadLimiter = rateLimit({
+export const uploadLimiter = createConditionalLimiter({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 20, // 20 uploads per hour
   message: {

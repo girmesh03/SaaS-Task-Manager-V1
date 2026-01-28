@@ -246,7 +246,7 @@ export const createUserValidator = [
       return true;
     }),
 
-  body("isPlatformUser")
+  body("isPlatformUser") // immutable, to be removed
     .optional()
     .isBoolean()
     .withMessage("isPlatformUser must be a boolean"),
@@ -267,7 +267,7 @@ export const createUserValidator = [
       return true;
     }),
 
-  body("employeeId")
+  body("employeeId") // must be optional
     .trim()
     .notEmpty()
     .withMessage("Employee ID is required")

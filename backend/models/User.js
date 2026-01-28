@@ -144,6 +144,7 @@ const userSchema = new mongoose.Schema(
     },
 
     // Platform User Flag (Requirement 9.5)
+    // to be immutable
     isPlatformUser: {
       type: Boolean,
       default: false,
@@ -216,12 +217,30 @@ const userSchema = new mongoose.Schema(
     // Employee ID (4-digit: 0001-9999, unique per org)
     employeeId: {
       type: String,
-      required: [true, "Employee ID is required"],
       trim: true,
       match: [
         USER_VALIDATION.EMPLOYEE_ID.PATTERN,
         "Employee ID must be a 4-digit number (0001-9999)",
       ],
+    },
+
+    // Phone (optional, Ethiopian format)
+    phone: {
+      type: String,
+      trim: true,
+      minlength: [
+        USER_VALIDATION.PHONE.MIN_LENGTH,
+        `Phone must be at least ${USER_VALIDATION.PHONE.MIN_LENGTH} characters`,
+      ],
+      maxlength: [
+        USER_VALIDATION.PHONE.MAX_LENGTH,
+        `Phone must not exceed ${USER_VALIDATION.PHONE.MAX_LENGTH} characters`,
+      ],
+      match: [
+        USER_VALIDATION.PHONE.PATTERN,
+        "Please provide a valid Ethiopian phone number (+251XXXXXXXXX or 0XXXXXXXXX)",
+      ],
+      default: null,
     },
 
     // Date of Birth (not future)
