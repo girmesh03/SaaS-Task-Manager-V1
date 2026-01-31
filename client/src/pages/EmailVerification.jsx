@@ -1,10 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate, useSearchParams, Link as RouterLink } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import Box from "@mui/material/Box";
-import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
-import Link from "@mui/material/Link";
 import CircularProgress from "@mui/material/CircularProgress";
 import Alert from "@mui/material/Alert";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
@@ -28,7 +26,7 @@ const EmailVerification = () => {
   const token = searchParams.get("token");
   const email = searchParams.get("email"); // Optional: can be passed from registration
 
-  const [verifyEmail, { isLoading }] = useVerifyEmailMutation();
+  const [verifyEmail] = useVerifyEmailMutation();
   const [resendVerification, { isLoading: isResending }] =
     useResendVerificationMutation();
   const [verificationState, setVerificationState] = useState({
@@ -106,156 +104,175 @@ const EmailVerification = () => {
   return (
     <Box
       sx={{
-        minHeight: "100vh",
+        flexGrow: 1,
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        bgcolor: "background.default",
-        py: 2,
+        px: 2,
+        py: 3,
       }}
     >
-      <Container maxWidth="xs">
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 2,
-            p: 2,
-            bgcolor: "background.paper",
-            borderRadius: 1,
-            boxShadow: 1,
-          }}
-        >
-          {/* Verifying State */}
-          {verificationState.status === "verifying" && (
-            <>
-              <CircularProgress size={48} />
-              <Typography variant="h6" align="center">
-                Verifying your email...
-              </Typography>
-              <Typography variant="body2" color="text.secondary" align="center">
-                Please wait while we verify your email address.
-              </Typography>
-            </>
-          )}
+      <Box
+        sx={{
+          width: "100%",
+          maxWidth: 400,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 2,
+          bgcolor: "background.paper",
+          borderRadius: 1,
+          boxShadow: 2,
+          p: 3,
+        }}
+      >
+        {/* Verifying State */}
+        {verificationState.status === "verifying" && (
+          <>
+            <CircularProgress size={48} />
+            <Typography variant="h6" align="center">
+              Verifying your email...
+            </Typography>
+            <Typography variant="body2" color="text.secondary" align="center">
+              Please wait while we verify your email address.
+            </Typography>
+          </>
+        )}
 
-          {/* Success State */}
-          {verificationState.status === "success" && (
-            <>
-              <CheckCircleOutlineIcon
-                sx={{ fontSize: 56, color: "success.main" }}
-              />
-              <Typography variant="h6" align="center">
-                Email Verified!
-              </Typography>
-              <Alert severity="success" sx={{ width: "100%" }}>
-                {verificationState.message}
-              </Alert>
-              <Typography variant="body2" color="text.secondary" align="center">
-                You can now log in to your account.
-              </Typography>
-              <Button
-                variant="contained"
-                fullWidth
-                onClick={handleNavigateToLogin}
-                size="small"
-              >
-                Go to Login
-              </Button>
-            </>
-          )}
+        {/* Success State */}
+        {verificationState.status === "success" && (
+          <>
+            <CheckCircleOutlineIcon
+              sx={{ fontSize: 56, color: "success.main" }}
+            />
+            <Typography variant="h6" align="center">
+              Email Verified!
+            </Typography>
+            <Alert severity="success" sx={{ width: "100%" }}>
+              {verificationState.message}
+            </Alert>
+            <Typography variant="body2" color="text.secondary" align="center">
+              You can now log in to your account.
+            </Typography>
+            <Button
+              variant="contained"
+              fullWidth
+              onClick={handleNavigateToLogin}
+              size="medium"
+              sx={{
+                py: 1.25,
+                textTransform: "none",
+                fontSize: "0.9375rem",
+                fontWeight: 600,
+              }}
+            >
+              Go to Login
+            </Button>
+          </>
+        )}
 
-          {/* Error State */}
-          {verificationState.status === "error" && (
-            <>
-              <ErrorOutlineIcon
-                sx={{
-                  fontSize: 56,
-                  color: resendSuccess ? "success.main" : "error.main",
-                }}
-              />
-              <Typography variant="h6" align="center">
-                {resendSuccess ? "Email Sent!" : "Verification Failed"}
-              </Typography>
-              <Alert
-                severity={resendSuccess ? "success" : "error"}
-                sx={{ width: "100%" }}
-              >
-                {verificationState.message}
-              </Alert>
+        {/* Error State */}
+        {verificationState.status === "error" && (
+          <>
+            <ErrorOutlineIcon
+              sx={{
+                fontSize: 56,
+                color: resendSuccess ? "success.main" : "error.main",
+              }}
+            />
+            <Typography variant="h6" align="center">
+              {resendSuccess ? "Email Sent!" : "Verification Failed"}
+            </Typography>
+            <Alert
+              severity={resendSuccess ? "success" : "error"}
+              sx={{ width: "100%" }}
+            >
+              {verificationState.message}
+            </Alert>
 
-              {!resendSuccess && (
-                <>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    align="center"
-                    sx={{ mt: 1 }}
-                  >
-                    Didn't receive the email or link expired?
-                  </Typography>
-
-                  <Box
-                    sx={{
-                      width: "100%",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 1.5,
-                      mt: 1,
-                    }}
-                  >
-                    <input
-                      type="email"
-                      placeholder="Enter your email"
-                      value={resendEmail}
-                      onChange={(e) => setResendEmail(e.target.value)}
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "4px",
-                        border: "1px solid #ccc",
-                        fontSize: "14px",
-                        width: "100%",
-                        boxSizing: "border-box",
-                      }}
-                    />
-
-                    <Button
-                      variant="outlined"
-                      fullWidth
-                      onClick={handleResendVerification}
-                      disabled={isResending || !resendEmail}
-                      size="small"
-                    >
-                      {isResending ? "Sending..." : "Resend Verification Email"}
-                    </Button>
-                  </Box>
-                </>
-              )}
-
-              <Button
-                variant="contained"
-                fullWidth
-                onClick={handleNavigateToLogin}
-                size="small"
-                sx={{ mt: 1 }}
-              >
-                Go to Login
-              </Button>
-
-              {resendSuccess && (
+            {!resendSuccess && (
+              <>
                 <Typography
-                  variant="caption"
+                  variant="body2"
                   color="text.secondary"
                   align="center"
+                  sx={{ mt: 1 }}
                 >
-                  Check your inbox and click the verification link
+                  Didn't receive the email or link expired?
                 </Typography>
-              )}
-            </>
-          )}
-        </Box>
-      </Container>
+
+                <Box
+                  sx={{
+                    width: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 1.5,
+                    mt: 1,
+                  }}
+                >
+                  <input
+                    type="email"
+                    placeholder="Enter your email"
+                    value={resendEmail}
+                    onChange={(e) => setResendEmail(e.target.value)}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: "4px",
+                      border: "1px solid #ccc",
+                      fontSize: "14px",
+                      width: "100%",
+                      boxSizing: "border-box",
+                    }}
+                  />
+
+                  <Button
+                    variant="outlined"
+                    fullWidth
+                    onClick={handleResendVerification}
+                    disabled={isResending || !resendEmail}
+                    size="medium"
+                    sx={{
+                      py: 1.25,
+                      textTransform: "none",
+                      fontSize: "0.9375rem",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {isResending ? "Sending..." : "Resend Verification Email"}
+                  </Button>
+                </Box>
+              </>
+            )}
+
+            <Button
+              variant="contained"
+              fullWidth
+              onClick={handleNavigateToLogin}
+              size="medium"
+              sx={{
+                mt: 1,
+                py: 1.25,
+                textTransform: "none",
+                fontSize: "0.9375rem",
+                fontWeight: 600,
+              }}
+            >
+              Go to Login
+            </Button>
+
+            {resendSuccess && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                align="center"
+              >
+                Check your inbox and click the verification link
+              </Typography>
+            )}
+          </>
+        )}
+      </Box>
     </Box>
   );
 };

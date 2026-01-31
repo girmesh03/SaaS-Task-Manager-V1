@@ -127,7 +127,7 @@ const Home = () => {
   ];
 
   return (
-    <Box sx={{ width: "100%", overflow: "hidden" }}>
+    <Box sx={{ width: "100%", height: "100%" }}>
       {/* Hero Section */}
       <Box
         sx={{

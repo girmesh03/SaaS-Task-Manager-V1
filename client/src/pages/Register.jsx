@@ -72,7 +72,6 @@ const Register = () => {
   } = useForm({
     mode: "onBlur",
     defaultValues: {
-      // Organization fields
       organizationName: "",
       organizationEmail: "",
       organizationPhone: "",
@@ -80,10 +79,8 @@ const Register = () => {
       organizationIndustry: null,
       organizationSize: null,
       organizationDescription: "",
-      // Department fields
       departmentName: "",
       departmentDescription: "",
-      // User fields
       firstName: "",
       lastName: "",
       email: "",
@@ -94,7 +91,7 @@ const Register = () => {
     },
   });
 
-  // Industry options from constants
+  // Industry options
   const industryOptions = useMemo(
     () =>
       Object.values(INDUSTRIES).map((industry) => ({
@@ -104,7 +101,7 @@ const Register = () => {
     []
   );
 
-  // Size options from constants
+  // Size options
   const sizeOptions = useMemo(
     () =>
       Object.values(INDUSTRIES_SIZE).map((size) => ({
@@ -114,7 +111,7 @@ const Register = () => {
     []
   );
 
-  // Toggle password visibility - memoized for stable reference
+  // Toggle password visibility
   const handleTogglePasswordVisibility = useCallback(() => {
     setShowPassword((prev) => !prev);
   }, []);
@@ -123,7 +120,7 @@ const Register = () => {
     setShowConfirmPassword((prev) => !prev);
   }, []);
 
-  // Password visibility icons - memoized to prevent re-renders
+  // Password visibility icons
   const passwordVisibilityIcon = useMemo(
     () => (
       <IconButton
@@ -169,7 +166,6 @@ const Register = () => {
         setApiError("");
         setSuccessMessage("");
 
-        // Prepare registration data
         const registrationData = {
           organization: {
             name: data.organizationName.trim(),
@@ -197,15 +193,12 @@ const Register = () => {
           },
         };
 
-        // Call register mutation
         await registerUser(registrationData);
 
-        // Show success message about email verification
         setSuccessMessage(
           "Registration successful! We've sent a verification email to your inbox. Please verify your email before logging in."
         );
 
-        // Redirect to login after 6 seconds to give user time to read message
         setTimeout(() => {
           navigate("/login", {
             replace: true,
@@ -216,7 +209,6 @@ const Register = () => {
           });
         }, 6000);
       } catch (error) {
-        // Handle API errors
         const errorMessage =
           error?.data?.error?.message ||
           error?.message ||
@@ -227,7 +219,6 @@ const Register = () => {
     [registerUser, navigate]
   );
 
-  // Loading state
   if (isLoading && !isSubmitting) {
     return <MuiLoading />;
   }
@@ -235,13 +226,13 @@ const Register = () => {
   return (
     <Box
       sx={{
+        flexGrow: 1,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        minHeight: "calc(100vh - 64px)",
-        px: 1.5,
-        py: 2,
+        px: 2,
+        py: 3,
       }}
     >
       {/* Register Card */}
@@ -251,12 +242,12 @@ const Register = () => {
           maxWidth: 600,
           bgcolor: "background.paper",
           borderRadius: 1,
-          boxShadow: 1,
-          p: { xs: 2, sm: 2.5 },
+          boxShadow: 2,
+          p: 3,
         }}
       >
         {/* Header */}
-        <Box sx={{ mb: 2, textAlign: "center" }}>
+        <Box sx={{ mb: 3, textAlign: "center" }}>
           <Typography
             variant="h5"
             component="h1"
@@ -280,7 +271,7 @@ const Register = () => {
 
         {/* Success Alert */}
         {successMessage && (
-          <Alert severity="success" sx={{ mb: 1.5 }}>
+          <Alert severity="success" sx={{ mb: 2 }}>
             {successMessage}
           </Alert>
         )}
@@ -289,7 +280,7 @@ const Register = () => {
         {apiError && (
           <Alert
             severity="error"
-            sx={{ mb: 1.5 }}
+            sx={{ mb: 2 }}
             onClose={() => setApiError("")}
           >
             {apiError}
@@ -301,12 +292,12 @@ const Register = () => {
           component="form"
           onSubmit={handleSubmit(onSubmit)}
           noValidate
-          sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}
+          sx={{ display: "flex", flexDirection: "column", gap: 2 }}
         >
           {/* Organization Section */}
           <Box>
             <Box
-              sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1 }}
+              sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}
             >
               <BusinessIcon fontSize="small" color="primary" />
               <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
@@ -314,7 +305,7 @@ const Register = () => {
               </Typography>
             </Box>
 
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <MuiTextField
                 {...register("organizationName", {
                   required: "Organization name is required",
@@ -474,7 +465,7 @@ const Register = () => {
           {/* Department Section */}
           <Box>
             <Box
-              sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1 }}
+              sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}
             >
               <DepartmentIcon fontSize="small" color="primary" />
               <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
@@ -482,7 +473,7 @@ const Register = () => {
               </Typography>
             </Box>
 
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <MuiTextField
                 {...register("departmentName", {
                   required: "Department name is required",
@@ -521,7 +512,7 @@ const Register = () => {
           {/* User Section */}
           <Box>
             <Box
-              sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1 }}
+              sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}
             >
               <PersonIcon fontSize="small" color="primary" />
               <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
@@ -529,7 +520,7 @@ const Register = () => {
               </Typography>
             </Box>
 
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <Box sx={{ display: "flex", gap: 2 }}>
                 <MuiTextField
                   {...register("firstName", {
@@ -599,7 +590,6 @@ const Register = () => {
                   {...register("employeeId", {
                     validate: {
                       validId: (value) => {
-                        // Optional field - only validate if provided
                         if (!value || value.trim() === "") return true;
                         const result = validateEmployeeId(value);
                         return result.isValid || result.error;
@@ -689,8 +679,7 @@ const Register = () => {
             fullWidth
             disabled={isSubmitting}
             sx={{
-              mt: 1,
-              py: 1,
+              py: 1.25,
               textTransform: "none",
               fontSize: "0.9375rem",
               fontWeight: 600,

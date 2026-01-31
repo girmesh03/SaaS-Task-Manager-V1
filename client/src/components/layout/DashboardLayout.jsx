@@ -1,18 +1,20 @@
 /**
  * DashboardLayout Component
  * Layout for authenticated dashboard pages
- * Includes Header, Sidebar, and main content area
+ * Includes Header, Sidebar, BottomNavigation (mobile), and main content area
  *
  * Flow: RootLayout → ProtectedRoutes → DashboardLayout → Outlet
  *
  * Features:
  * - Header with navigation and user menu
- * - Sidebar with navigation menu
- * - Main content area for page content
+ * - Sidebar with navigation menu (permanent on desktop, temporary on mobile)
+ * - Bottom navigation bar with SpeedDial (mobile only, < 960px)
+ * - Main content area for page content (scrollable)
  * - Responsive design (mobile, tablet, desktop)
  * - Proper spacing and overflow handling
+ * - Extra padding bottom on mobile for bottom navigation
  *
- * Requirements: 45.1, 45.2, 45.3, 45.4, 45.5
+ * Requirements: 1.1, 1.6, 1.7, 2.1-2.10, 45.1, 45.2, 45.3, 45.4, 45.5
  */
 
 import { useState, useCallback } from "react";
@@ -21,6 +23,7 @@ import Box from "@mui/material/Box";
 import Toolbar from "@mui/material/Toolbar";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
+import BottomNavigation from "./BottomNavigation";
 
 const DashboardLayout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -37,19 +40,13 @@ const DashboardLayout = () => {
 
   return (
     <Box
-      sx={(theme) => ({
+      sx={{
         display: "flex",
-        flexDirection: "row",
-        minHeight: "100vh",
-        height: "100%",
+        flexDirection: "column",
         width: "100%",
+        height: "100%",
         overflow: "hidden",
-        position: "relative",
-        [theme.breakpoints.up("xl")]: {
-          maxWidth: theme.breakpoints.values.xl,
-          margin: "0 auto",
-        },
-      })}
+      }}
     >
       {/* Header */}
       <Header onMenuClick={handleDrawerToggle} />
@@ -57,37 +54,33 @@ const DashboardLayout = () => {
       {/* Sidebar */}
       <Sidebar open={mobileOpen} onClose={handleDrawerClose} />
 
-      {/* Main Content Area */}
+      {/* Main Content Area - Scrollable Outlet Container */}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          display: "flex",
-          flexDirection: "column",
-          width: { xs: "100%", lg: "calc(100% - 240px)" },
-          height: "100%",
+          width: { xs: "100%", md: "calc(100% - 240px)" },
+          ml: { xs: 0, md: "240px" },
           overflow: "auto",
           bgcolor: "background.default",
         }}
       >
         {/* Toolbar spacer */}
-        <Toolbar sx={{ minHeight: { xs: 56, sm: 64 } }} />
+        <Toolbar />
 
-        {/* Page Content */}
+        {/* Outlet with padding */}
         <Box
           sx={{
-            flexGrow: 1,
-            display: "flex",
-            flexDirection: "column",
             p: { xs: 2, sm: 3 },
-            width: "100%",
-            height: "100%",
-            overflow: "auto",
+            pb: { xs: 9, md: 3 }, // Extra padding bottom on mobile for bottom navigation
           }}
         >
           <Outlet />
         </Box>
       </Box>
+
+      {/* Bottom Navigation (Mobile only) */}
+      <BottomNavigation />
     </Box>
   );
 };

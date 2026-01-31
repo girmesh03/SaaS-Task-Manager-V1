@@ -26,11 +26,8 @@ const RootLayout = () => {
   return (
     <Box
       sx={{
-        display: "flex",
-        flexDirection: "column",
-        minHeight: "100vh",
-        height: "100%",
-        width: "100%",
+        width: "100vw",
+        height: "100dvh",
         overflow: "hidden",
         [theme.breakpoints.up("xl")]: {
           maxWidth: theme.breakpoints.values.xl,

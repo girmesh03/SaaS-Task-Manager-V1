@@ -42,7 +42,7 @@ import {
   MuiSelectAutocomplete,
 } from "../reusable";
 import { UserMenuItems } from "../common";
-import { useAuth, useAuthorization, useResponsive } from "../../hooks";
+import { useAuth, useAuthorization } from "../../hooks";
 import { useGetOrganizationsQuery } from "../../redux/features/organizationSlice";
 import { getUserInitials } from "../../utils/userHelpers";
 import { getMenuSlotProps } from "../../utils/menuStyles";
@@ -52,7 +52,6 @@ const Header = memo(({ onMenuClick }) => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { isPlatformSuperAdmin } = useAuthorization("organizations");
-  const { isMobile } = useResponsive();
 
   const [anchorEl, setAnchorEl] = useState(null);
   const open = Boolean(anchorEl);
@@ -162,17 +161,18 @@ const Header = memo(({ onMenuClick }) => {
         }}
       >
         {/* Mobile Menu Button */}
-        {isMobile && (
-          <IconButton
-            edge="start"
-            color="inherit"
-            aria-label="open drawer"
-            onClick={onMenuClick}
-            sx={{ mr: 1 }}
-          >
-            <MenuIcon />
-          </IconButton>
-        )}
+        <IconButton
+          edge="start"
+          color="inherit"
+          aria-label="open drawer"
+          onClick={onMenuClick}
+          sx={{
+            mx: 1,
+            display: { xs: "flex", md: "none" },
+          }}
+        >
+          <MenuIcon />
+        </IconButton>
 
         {/* Logo and Brand */}
         <Box
@@ -187,6 +187,7 @@ const Header = memo(({ onMenuClick }) => {
             border: "none",
             background: "transparent",
             p: 0,
+            mr: 2,
             "&:focus-visible": {
               outline: "2px solid",
               outlineColor: "primary.main",
@@ -205,24 +206,24 @@ const Header = memo(({ onMenuClick }) => {
               color: "primary.main",
             }}
           />
-          {!isMobile && (
-            <Typography
-              variant="h6"
-              component="div"
-              sx={{
-                fontWeight: 600,
-                color: "primary.main",
-                display: { xs: "none", sm: "block" },
-              }}
-            >
-              TaskManager
-            </Typography>
-          )}
+          <Typography
+            variant="h6"
+            component="div"
+            sx={{
+              fontWeight: 600,
+              color: "primary.main",
+              display: { xs: "none", sm: "block" },
+            }}
+          >
+            TaskManager
+          </Typography>
         </Box>
 
         {/* Organization Switcher (Platform SuperAdmin only) */}
-        {isPlatformSuperAdmin && !isMobile && organizations.length > 0 && (
-          <Box sx={{ minWidth: 200, ml: 2 }}>
+        {isPlatformSuperAdmin && organizations.length > 0 && (
+          <Box
+            sx={{ minWidth: 200, ml: 2, display: { xs: "none", md: "block" } }}
+          >
             <MuiSelectAutocomplete
               options={organizations}
               value={currentOrganization}
@@ -286,10 +287,12 @@ const Header = memo(({ onMenuClick }) => {
           open={open}
           onClose={handleMenuClose}
           onClick={handleMenuClose}
-          slotProps={getMenuSlotProps()}
-          MenuListProps={{
-            "aria-labelledby": "account-button",
-            role: "menu",
+          slotProps={{
+            ...getMenuSlotProps(),
+            list: {
+              "aria-labelledby": "account-button",
+              role: "menu",
+            },
           }}
           transformOrigin={{ horizontal: "right", vertical: "top" }}
           anchorOrigin={{ horizontal: "right", vertical: "bottom" }}

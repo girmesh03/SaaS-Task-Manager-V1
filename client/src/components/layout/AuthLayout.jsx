@@ -36,16 +36,8 @@ import { MuiThemeDropDown, MuiTooltip } from "../reusable";
 import { UserMenuItems } from "../common";
 import { useAuth, useResponsive } from "../../hooks";
 import { getUserInitials } from "../../utils/userHelpers";
+import { getMenuSlotProps } from "../../utils/menuStyles";
 import logger from "../../utils/logger";
-
-/**
- * Toolbar height constants
- * Used for consistent header height and content offset
- */
-const TOOLBAR_HEIGHT = {
-  xs: 56,
-  sm: 64,
-};
 
 /**
  * Logo button styles - extracted for reusability and maintainability
@@ -203,7 +195,6 @@ const PublicHeader = memo(() => {
     >
       <Toolbar
         sx={{
-          minHeight: TOOLBAR_HEIGHT,
           px: { xs: 2, sm: 3 },
           gap: { xs: 1, sm: 2 },
         }}
@@ -257,26 +248,10 @@ const PublicHeader = memo(() => {
               onClose={handleMenuClose}
               onClick={handleMenuClose}
               slotProps={{
-                paper: {
-                  elevation: 8,
-                  sx: {
-                    minWidth: 200,
-                    mt: 1.5,
-                    overflow: "visible",
-                    filter: "drop-shadow(0px 2px 8px rgba(0,0,0,0.1))",
-                    "&:before": {
-                      content: '""',
-                      display: "block",
-                      position: "absolute",
-                      top: 0,
-                      right: 14,
-                      width: 10,
-                      height: 10,
-                      bgcolor: "background.paper",
-                      transform: "translateY(-50%) rotate(45deg)",
-                      zIndex: 0,
-                    },
-                  },
+                ...getMenuSlotProps(),
+                list: {
+                  "aria-labelledby": "account-button",
+                  role: "menu",
                 },
               }}
               transformOrigin={{ horizontal: "right", vertical: "top" }}
@@ -325,16 +300,15 @@ const AuthLayout = () => {
       sx={{
         display: "flex",
         flexDirection: "column",
-        minHeight: "100vh",
-        height: "100%",
         width: "100%",
+        height: "100%",
         overflow: "hidden",
       }}
     >
       {/* Public Header */}
       <PublicHeader />
 
-      {/* Main Content Area */}
+      {/* Main Content Area - Scrollable Outlet Container */}
       <Box
         component="main"
         sx={{
@@ -342,26 +316,12 @@ const AuthLayout = () => {
           display: "flex",
           flexDirection: "column",
           width: "100%",
-          minHeight: "100vh",
-          height: "100%",
-          overflow: "auto",
-          bgcolor: "background.default",
+          overflowY: "auto",
+          overflowX: "hidden",
           pt: { xs: 7, sm: 8 }, // Toolbar height offset
         }}
       >
-        {/* Page Content */}
-        <Box
-          sx={{
-            flexGrow: 1,
-            display: "flex",
-            flexDirection: "column",
-            width: "100%",
-            maxWidth: "100%",
-            overflow: "auto",
-          }}
-        >
-          <Outlet />
-        </Box>
+        <Outlet />
       </Box>
     </Box>
   );

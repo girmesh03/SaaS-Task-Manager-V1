@@ -156,9 +156,8 @@ const ResetPassword = () => {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          minHeight: "calc(100vh - 64px)",
-          px: 1.5,
-          py: 2,
+          px: 2,
+          py: 3,
         }}
       >
         <Box
@@ -167,8 +166,8 @@ const ResetPassword = () => {
             maxWidth: 400,
             bgcolor: "background.paper",
             borderRadius: 1,
-            boxShadow: 1,
-            p: { xs: 2, sm: 2.5 },
+            boxShadow: 2,
+            p: 3,
             textAlign: "center",
           }}
         >
@@ -183,7 +182,7 @@ const ResetPassword = () => {
             fullWidth
             size="medium"
             sx={{
-              py: 1,
+              py: 1.25,
               textTransform: "none",
               fontSize: "0.9375rem",
               fontWeight: 600,
@@ -192,7 +191,7 @@ const ResetPassword = () => {
             Request New Reset Link
           </Button>
 
-          <Box sx={{ mt: 1.5 }}>
+          <Box sx={{ mt: 2 }}>
             <Link
               component={RouterLink}
               to="/login"
@@ -216,13 +215,13 @@ const ResetPassword = () => {
   return (
     <Box
       sx={{
+        flexGrow: 1,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        minHeight: "calc(100vh - 64px)",
-        px: 1.5,
-        py: 2,
+        px: 2,
+        py: 3,
       }}
     >
       {/* Reset Password Card */}
@@ -232,12 +231,12 @@ const ResetPassword = () => {
           maxWidth: 400,
           bgcolor: "background.paper",
           borderRadius: 1,
-          boxShadow: 1,
-          p: { xs: 2, sm: 2.5 },
+          boxShadow: 2,
+          p: 3,
         }}
       >
         {/* Header */}
-        <Box sx={{ mb: 2, textAlign: "center" }}>
+        <Box sx={{ mb: 3, textAlign: "center" }}>
           <Typography
             variant="h5"
             component="h1"
@@ -261,7 +260,7 @@ const ResetPassword = () => {
 
         {/* Success Alert */}
         {successMessage && (
-          <Alert severity="success" sx={{ mb: 1.5 }}>
+          <Alert severity="success" sx={{ mb: 2 }}>
             {successMessage}
           </Alert>
         )}
@@ -270,7 +269,7 @@ const ResetPassword = () => {
         {apiError && (
           <Alert
             severity="error"
-            sx={{ mb: 1.5 }}
+            sx={{ mb: 2 }}
             onClose={() => setApiError("")}
           >
             {apiError}
@@ -282,7 +281,7 @@ const ResetPassword = () => {
           component="form"
           onSubmit={handleSubmit(onSubmit)}
           noValidate
-          sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}
+          sx={{ display: "flex", flexDirection: "column", gap: 2 }}
         >
           {/* Password Field */}
           <MuiTextField
@@ -339,8 +338,7 @@ const ResetPassword = () => {
             fullWidth
             disabled={isSubmitting}
             sx={{
-              mt: 0.5,
-              py: 1,
+              py: 1.25,
               textTransform: "none",
               fontSize: "0.9375rem",
               fontWeight: 600,

@@ -103,6 +103,7 @@ const MuiBottomNavigation = forwardRef(
     if (position === "fixed") {
       return (
         <Paper
+          elevation={elevation}
           sx={{
             position: "fixed",
             bottom: 0,
@@ -110,7 +111,6 @@ const MuiBottomNavigation = forwardRef(
             right: 0,
             zIndex: (theme) => theme.zIndex.appBar,
           }}
-          elevation={elevation}
         >
           {nav}
         </Paper>

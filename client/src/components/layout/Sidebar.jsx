@@ -443,13 +443,8 @@ const Sidebar = memo(({ open, onClose }) => {
         variant="temporary"
         open={open}
         onClose={onClose}
-        slots={{
-          backdrop: Box,
-        }}
-        slotProps={{
-          backdrop: {
-            keepMounted: true, // Better open performance on mobile
-          },
+        ModalProps={{
+          keepMounted: true, // Better open performance on mobile
         }}
         sx={{
           "& .MuiDrawer-paper": {
